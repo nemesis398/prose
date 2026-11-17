@@ -1,7 +1,7 @@
 # English
 
 American spelling: `organize`, `behavior`, `color`, `center`, `license` as both
-noun and verb, `analyze`. That is what the vault already uses.
+noun and verb, `analyze`.
 
 ## Dashes
 
@@ -10,7 +10,7 @@ is the British habit and is not the convention here. Restructure instead, and
 the restructure is usually an improvement, because the dash was hiding a
 decision the sentence had not made.
 
-```
+```text
 bad     The container starts in under a second — fast enough for us.
 good    The container starts in under a second, which is fast enough for us.
 good    The container starts in under a second. Fast enough for us.
@@ -22,7 +22,7 @@ The en dash survives for ranges and for paired opposites: `2020–2024`,
 Hyphenate compound modifiers before a noun, not after it, and never after an
 `-ly` adverb.
 
-```
+```text
 a well-documented setup          the setup is well documented
 a self-hosted server             the server is self hosted
 a fully managed service          (no hyphen after "fully")
@@ -33,7 +33,7 @@ a fully managed service          (no hyphen after "fully")
 **The comma splice is the one to watch.** Two complete sentences joined by a
 comma need a semicolon, a period, or a conjunction.
 
-```
+```text
 bad     The backup ran, it finished in ten minutes.
 good    The backup ran. It finished in ten minutes.
 good    The backup ran, and it finished in ten minutes.
@@ -55,7 +55,7 @@ without comment.
 ### False friends
 
 | Written | Means in English | Intended |
-|---|---|---|
+| --- | --- | --- |
 | eventually | in the end | eventuell → possibly, maybe |
 | actual, actually | real, in fact | aktuell → current, currently |
 | become | turn into | bekommen → get, receive |
@@ -82,7 +82,7 @@ without comment.
 `information`, `software`, `hardware`, `advice`, `research`, `feedback`,
 `training`, `knowledge`, `equipment`, `evidence`, `staff`, `progress`.
 
-```
+```text
 bad     I sent you some informations and two advices.
 good    I sent you some information and two pieces of advice.
 ```
@@ -124,7 +124,7 @@ about B`. It sounds like insight and carries none. State the thing.
 **Announcing instead of saying.** `Let's dive into the numbers` followed by the
 numbers. Cut the first half.
 
-**The paragraph that restates itself.** A closing sentence that summarises what
+**The paragraph that restates itself.** A closing sentence that summarizes what
 was just said, and a `## Conclusion` on a note that is eight lines long.
 
 **Uniform bullets.** Every item the same length and the same grammatical shape.
@@ -146,7 +146,7 @@ deliberately.
 ## Numbers and dates in English
 
 | | |
-|---|---|
+| --- | --- |
 | Thousands | `5,000` |
 | Decimal | `3.5` |
 | Percent | `40%`, no space |

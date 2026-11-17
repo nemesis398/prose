@@ -1,58 +1,106 @@
 # LanguageTool
 
-The second pass in `scripts/check.py`. It exists because it fails
-independently: it catches comma placement and agreement inside long German
-sentences, which is exactly the class of error a language model is worst at
-spotting in its own output.
+The second pass of `prose-check`. It exists because it fails independently:
+it catches comma placement and agreement inside long German sentences, which
+is exactly the class of error a language model is worst at spotting in its own
+output.
 
-## Backend
+It is off until you choose a backend. A fresh install runs the rule pass, sends
+nothing anywhere, and says `LanguageTool is off` in the report.
 
-The script uses one backend, the one configured, and never falls to
-another: a backend standing in silently would turn a refused login into a
-run that reads as clean.
+## The settings file
 
-1. **Self-hosted**, if `LANGUAGETOOL_SERVER` is set. No text leaves the
-   machine and there are no rate limits. It runs the open source rules
-   only, so the premium rules are not available this way. When it is set it
-   is the only backend.
-2. **Premium cloud**, if `LANGUAGETOOL_USERNAME` and `LANGUAGETOOL_API_KEY`
-   are both set. `https://api.languagetoolplus.com`.
-3. **Free cloud**, `https://api.languagetool.org`, no account, only when
-   neither of the two above is configured. A check without the Premium
-   values stops before it (exit 2, naming the values to set), so in practice
-   only a direct call of `check_text` reaches it; if it does not answer
-   either, hunspell checks English spelling only, and the output says so.
+`$XDG_CONFIG_HOME/prose/config.json`, which is `~/.config/prose/config.json`
+when `XDG_CONFIG_HOME` is not set. `/prose:setup` writes it, and so does
+`prose-check --setup` on a terminal. Every key is optional, and a missing file
+means no settings.
 
-If the configured backend refuses the probe (HTTP 401, 403, any HTTP error)
-or cannot be reached, the check exits 2 with one line naming the backend,
-its address and the HTTP status or why it was unreachable. `--no-lt` runs
-the other checks without LanguageTool.
+```json
+{
+  "languageRule": "German for notes, English for code; Sie for customers",
+  "ignoreWords": ["Proxmox", "Grafana"],
+  "languagetool": {
+    "backend": "premium",
+    "username": "you@example.org",
+    "keyItem": "LanguageTool"
+  }
+}
+```
 
-`--selftest` prints which backend is configured, whether it answers and what
-tier it actually gives, and exits 2 when it does not answer.
+| Key | Holds |
+| --- | --- |
+| `languageRule` | which language a text is written in, and when a German reader gets `Sie`; `prose-check --rules` prints it |
+| `ignoreWords` | words LanguageTool should accept, on top of the dictionary |
+| `languagetool.backend` | `none`, `public`, `premium` or `server` |
+| `languagetool.server` | the URL, for `server` |
+| `languagetool.username` | the Premium account's login, for `premium` |
+| `languagetool.keyItem` | the name or id of the Bitwarden item that holds the Premium key, read with `rbw` |
 
-## Credentials
+**A file that is present but cannot be used stops the check** with exit 2,
+naming the file and the problem: invalid JSON, a key of the wrong type, an
+unknown `backend` such as `"premuim"`, or `server` without a URL. Reading such
+a file as "no settings" would turn Premium off after one typo while every run
+stayed green. An unknown key is ignored, and `--selftest` lists it.
 
-The API key is a secret and is never kept in a file: not in either
-repository of ravnix and not on the disk. The account is the skill value
-`prose.languagetool.username`. Two sources, reported by `--selftest`, the
-environment first:
+`prose-check --setup --values-stdin` merges a JSON object into the file: the
+keys given replace the stored ones, a key set to `null` is deleted, and the
+others stay. When `config.json` is a symlink, the file it points to is
+written and the link stays.
 
-1. **Environment variables.** `LANGUAGETOOL_API_KEY` and
-   `LANGUAGETOOL_USERNAME`, for a shell that already holds them; on a ravnix
-   host `ravnix.shell.secretEnv` can put them into Claude Code's environment
-   from the same vault. `LANGUAGETOOL_SERVER` names a self-hosted server.
-2. **Bitwarden via `rbw`**, the item that the skill value
-   `prose.languagetool.item` names (by name or id): the key in its password
-   field. It probes `rbw unlocked` first and stops when the vault is
-   locked, so an unattended run never blocks on a pinentry prompt; the
-   check then exits 2 saying so. `--unlock` allows the prompt when wanted.
+## The backend
 
-Without the item or the account the check exits 2 with one line per value,
-"set `prose.languagetool.item` in your ravnix skill values", and so does
-`--selftest`. `--no-lt` runs the other checks without LanguageTool.
+| Backend | Where the text goes |
+| --- | --- |
+| `none` | nowhere; grammar is not checked |
+| `public` | LanguageTool's free server, `https://api.languagetool.org`, rate-limited |
+| `premium` | LanguageTool's Premium API, `https://api.languagetoolplus.com`, under your account |
+| `server` | the server at the URL you give, such as your own |
 
-The key must never go into the notes vault or any other synced tree, because
+The checker uses one backend, the one chosen, and never falls to another: a
+backend standing in silently would turn a refused login into a run that reads
+as clean. It is chosen in this order:
+
+1. `languagetool.backend` in the file. The environment only fills in its
+   values: with `backend: public` and a key exported, the check stays on the
+   public server.
+2. Without a backend in the file, the environment: `LANGUAGETOOL_SERVER`
+   means `server` with that URL, and `LANGUAGETOOL_API_KEY` together with
+   `LANGUAGETOOL_USERNAME` mean `premium`.
+3. Neither: `none`, and nothing leaves the machine.
+
+For the chosen backend a variable beats the file's value:
+`LANGUAGETOOL_SERVER` beats `server`, `LANGUAGETOOL_USERNAME` beats
+`username`, and `LANGUAGETOOL_API_KEY` beats the other key sources.
+
+If the backend refuses the probe (HTTP 401, 403, any HTTP error) or cannot be
+reached, the check exits 2 with one line naming the backend, its address and
+the HTTP status or why it was unreachable. `--no-lt` runs the other checks
+without LanguageTool.
+
+`--selftest` prints the settings file, the backend and why it was chosen,
+where the key came from, the dictionaries, and whether the backend answers and
+what tier it actually gives. It exits 2 when the backend does not answer.
+
+## The Premium key
+
+The API key is a secret and never sits in `config.json`; setup refuses an
+`apiKey`. The checker looks for it in this order:
+
+1. **`LANGUAGETOOL_API_KEY`** in the environment, for a shell that already
+   holds it.
+2. **The rbw item named by `keyItem`**: the key in its password field. It is
+   read only when `rbw` is installed and unlocked. The checker probes
+   `rbw unlocked` first and moves on when the vault is locked, so an
+   unattended run never blocks on a pinentry prompt.
+3. **`$XDG_CONFIG_HOME/prose/credentials`**, holding only the key on one
+   line. A line in the form `LANGUAGETOOL_API_KEY=KEY` works too. The file
+   must have mode 600; with a wider mode it is refused with a message (the
+   mode is not checked on Windows).
+
+Premium without the account or without a key exits 2 with one line that names
+what is missing and all three key sources.
+
+The key must never go into a notes vault or any other synced tree, because
 those sync to other devices.
 
 LanguageTool documents the API as a separate plan from the consumer Premium
@@ -63,15 +111,21 @@ comes back without a `premiumHint`, which is the field that actually proves
 premium rules ran. No support request was needed. If that ever changes the
 probe shows it: `--selftest` reports "free rules only".
 
+## Without a backend
+
+With `none`, English spelling is still checked locally by hunspell when it is
+installed: `$PROSE_HUNSPELL`, else `hunspell` on `PATH`. Its findings are
+warnings named `HUNSPELL`. German spelling and all grammar wait for a backend.
+
 ## Limits
 
 | | Free | Premium |
-|---|---|---|
+| --- | --- | --- |
 | Requests per minute | 20 | 80 |
 | Characters per minute | 75,000 | 300,000 |
 | Characters per request | 20,000 | 60,000 |
 
-The script chunks at 18,000 characters, under the lower ceiling, so the same
+The checker chunks at 18,000 characters, under the lower ceiling, so the same
 code path works on either tier.
 
 A long document therefore spans several requests and can brush the per-minute
@@ -95,15 +149,17 @@ docker run -d --name languagetool -p 8081:8010 \
   erikvl87/languagetool
 ```
 
-Then set `LANGUAGETOOL_SERVER=http://localhost:8081`. The n-gram data is
-optional and improves confusion-pair detection, which is the part that catches
-`das` against `dass`.
+Then choose `server` with `http://localhost:8081` in `/prose:setup`, or export
+`LANGUAGETOOL_SERVER=http://localhost:8081`. A self-hosted server runs the
+open source rules only, so the premium rules are not available this way. The
+n-gram data is optional and improves confusion-pair detection, which is the
+part that catches `das` against `dass`.
 
 ## Filtering
 
-`LT_DISABLED_RULES` in the script turns off rules that argue with this skill's
-own policy, chiefly `DASH_RULE`, which suggests em dashes, and the rules that
-fire constantly on note-shaped markdown such as bullets that legitimately start
+The checker turns off LanguageTool rules that argue with this skill's own
+policy, chiefly `DASH_RULE`, which suggests em dashes, and the rules that fire
+constantly on note-shaped markdown such as bullets that legitimately start
 lowercase and carry no full stop.
 
 Three more filters exist specifically because of what premium returns. All
@@ -116,25 +172,28 @@ errors is how a checker loses its credibility.
 **`QB_NEW_*` is demoted to a warning.** These QuillBot-derived premium rules
 declare `issueType=grammar` or `misspelling`, so at face value they arrive as
 errors, and this skill says to fix every error. On one real note that would
-have forced 23 wrong edits: capitalising `restic`, lowercasing a vendor's actual
+have forced 23 wrong edits: capitalizing `restic`, lowercasing a vendor's actual
 product name "Cloud Storage", and turning a statement into a question. They are
 still worth reading, so they stay, as warnings. After the demotion that same
 note reports 0 errors and 15 warnings.
 
 **Casing complaints go through the dictionary, case-insensitively.** A term
-listed in `IGNORE_WORDS` or the personal dictionary keeps whatever casing it
-was written with, which is what stops `restic` becoming `Restic`.
+the checker accepts keeps whatever casing it was written with, which is what
+stops `restic` becoming `Restic`.
 
 Premium also reads a markdown table row as running prose and suggests
 rewriting `| 3 copies | Live data |` into `3 copies: live`, which would corrupt
 the table. Suggestion-class rules are therefore dropped on table rows.
 
-Spelling complaints are filtered against `IGNORE_WORDS` in the script plus
-the user's dictionary, `~/.config/prose/dictionary.txt`, one word per line,
-which is the place to add terms as they come up rather than editing the
-script. On a ravnix host ravnix-dict keeps that file in step with the other
-tools' dictionaries. The list that ships beside the skill is read only when
-that file does not exist.
+Spelling complaints are filtered against the accepted words, which come from
+three places:
+
+- a built-in list of names every Claude Code user meets: Claude, Anthropic,
+  LanguageTool, Markdown, GitHub and the like;
+- your dictionary, `$XDG_CONFIG_HOME/prose/dictionary.txt`, one word per line,
+  which is the place to add terms as they come up. When it does not exist, the
+  `dictionary.txt` beside the skill is read instead;
+- `ignoreWords` in `config.json`, which adds to either.
 
 Anything LanguageTool flags inside masked regions is dropped, because a
 spelling error inside a command name or a wikilink target cannot be fixed
@@ -145,10 +204,10 @@ without breaking the thing it names.
 Both were established empirically against the live API, and both silently
 corrupt results if assumed the other way.
 
-**Offsets are UTF-16 code units, not codepoints.** LanguageTool runs on the
+**Offsets are UTF-16 code units, not code points.** LanguageTool runs on the
 JVM. Every emoji before a finding shifts its reported position by one, and the
-error accumulates down the document. In a vault where headings are labelled
-with emoji this is not a corner case, it is every file. The script converts
+error accumulates down the document. In notes where headings are labeled
+with emoji this is not a corner case, it is every file. The checker converts
 with `utf16_prefix` and `utf16_to_codepoint`.
 
 **`interpretAs` does not shift offsets.** When the `data` parameter is used,
@@ -164,8 +223,8 @@ premium rules were **not** applied.
 
 ## Mixed-language documents
 
-The script splits the document into paragraphs, detects the language of each,
-merges neighbours that agree, and sends each stretch under its own language
+The checker splits the document into paragraphs, detects the language of each,
+merges neighbors that agree, and sends each stretch under its own language
 code. Sending a mixed file as one language means the English paragraphs get
 German grammar rules and no English spellcheck at all, which looks like a clean
 result and is not one.

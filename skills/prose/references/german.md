@@ -13,7 +13,7 @@ is the most common failure.
 **Every subordinate clause is fenced off**, on both sides if it sits in the
 middle.
 
-```
+```text
 Ich weiß, dass es funktioniert.
 Der Server, der im Keller steht, läuft seit Monaten.
 Wenn das Backup durchläuft, ist alles gut.
@@ -22,7 +22,7 @@ Wenn das Backup durchläuft, ist alles gut.
 **No comma before `und` or `oder` in a list.** The English serial comma does
 not exist here and is the clearest sign of translated text.
 
-```
+```text
 falsch   Äpfel, Birnen, und Bananen
 richtig  Äpfel, Birnen und Bananen
 ```
@@ -37,14 +37,14 @@ when the sentence is genuinely hard to parse without it.
 correlate points at it. Otherwise it is optional, and a comma is still allowed
 for clarity.
 
-```
+```text
 Wir haben umgestellt, um Kosten zu sparen.
 Er hat vergessen(,) das Backup zu prüfen.
 ```
 
 **`als` and `wie`** take a comma only in front of a full clause.
 
-```
+```text
 Er ist größer als ich.
 Es dauerte länger, als ich gedacht hatte.
 ```
@@ -57,7 +57,7 @@ Es dauerte länger, als ich gedacht hatte.
 swapped for `dieses`, `jenes` or `welches`. `dass` is a conjunction and cannot.
 That substitution is the whole test.
 
-```
+```text
 Das Backup, das gestern lief, war vollständig.   (dieses / welches)
 Ich weiß, dass das Backup gelaufen ist.          (no substitution possible)
 ```
@@ -66,36 +66,37 @@ Ich weiß, dass das Backup gelaufen ist.          (no substitution possible)
 
 After a **short** vowel: `ss`. After a **long** vowel or a diphthong: `ß`.
 
-```
+```text
 ss   dass, muss, Fluss, Kuss, wissen, lassen, Prozess, Adresse
 ß    Straße, Fuß, groß, heißen, weiß, außer, Maß, schließen
 ```
 
-{{user.name}} writes German German, so `ß` stays. Swiss orthography drops it, which is
-not the convention here.
+This style writes German German, so `ß` stays. Swiss orthography drops it,
+which is not the convention here.
 
 ## Groß- und Kleinschreibung
 
-Nominalisations are capitalised, and this is where generated German slips
+Nominalizations are capitalized, and this is where generated German slips
 most often.
 
-```
+```text
 das Wichtigste, das Beste, alles Gute, etwas Neues, nichts Besonderes
 im Folgenden, im Allgemeinen, im Einzelnen, im Voraus, des Weiteren
 beim Schreiben, zum Testen, das Laufen, ohne Zögern
 ```
 
 After `etwas`, `nichts`, `viel`, `wenig`, `alles`, the following adjective is a
-noun and is capitalised.
+noun and is capitalized.
 
-Times of day after a day reference are capitalised: `heute Morgen`, `gestern
+Times of day after a day reference are capitalized: `heute Morgen`, `gestern
 Abend`. The adverbs are not: `morgens`, `abends`, `montags`.
 
 Adjectives derived from proper names stay lowercase unless they are part of a
 name: `die deutsche Sprache`, but `die Deutsche Bahn`.
 
-Address form: `du`, `dich`, `dein` lowercase, per current Duden and per {{user.name}}'s
-choice. `Sie`, `Ihnen`, `Ihr` capitalised.
+Address form: `du`, `dich`, `dein` lowercase, per current Duden and per this
+style. `Sie`, `Ihnen`, `Ihr` capitalized. The language rule that
+`prose-check --rules` prints says when a reader gets `Sie`.
 
 ## Komposita
 
@@ -103,7 +104,7 @@ German compounds are written as **one word**. Splitting them is the
 Deppenleerzeichen, and it is the single most visible German error in text that
 was drafted in English.
 
-```
+```text
 falsch   Netzwerk Übersicht, Datenbank Server, Sicherheits Konzept
 richtig  Netzwerkübersicht, Datenbankserver, Sicherheitskonzept
 ```
@@ -111,7 +112,7 @@ richtig  Netzwerkübersicht, Datenbankserver, Sicherheitskonzept
 Hyphenate when the compound contains an abbreviation, a proper name, a number,
 or when three or more parts would become unreadable.
 
-```
+```text
 E-Mail-Adresse, IT-Sicherheit, Linux-Kernel, 24-Stunden-Dienst
 Cookie-Banner, Error-Tracking, DSGVO-Konformität
 ```
@@ -128,7 +129,7 @@ Watch the Fugen-s: `Sicherheitskonzept`, `Arbeitsplatz`, `Betriebssystem`.
 the genitive in written German. The dative is spoken usage and reads as
 careless in a document.
 
-```
+```text
 falsch   wegen dem Wetter, trotz dem Fehler, während dem Betrieb
 richtig  wegen des Wetters, trotz des Fehlers, während des Betriebs
 ```
@@ -138,7 +139,7 @@ richtig  wegen des Wetters, trotz des Fehlers, während des Betriebs
 Per DIN 5008, and the checker enforces the first three.
 
 | | |
-|---|---|
+| --- | --- |
 | Tausender | `5.000`, `1.250.000` |
 | Dezimal | `3,5` |
 | Prozent | `40 %` with a space |
@@ -155,8 +156,8 @@ Per DIN 5008, and the checker enforces the first three.
 German uses `„Text“`, low-high. The alternative is `»Text«`. Nested quotes use
 the single form `‚Text‘`.
 
-In markdown notes straight quotes are fine and are what the vault mostly uses.
-What matters is not mixing both inside one document, which the checker reports.
+In markdown notes straight quotes are fine and are what most notes use. What
+matters is not mixing both inside one document, which the checker reports.
 
 ## Anglizismen
 
@@ -183,7 +184,7 @@ zu beachten, dass`, `Es gilt zu beachten`. Delete the opener and keep the fact.
 **Nominalstil.** German makes this easy and it drains every sentence. Prefer
 the verb.
 
-```
+```text
 schwer   Die Durchführung der Migration erfolgt am Freitag.
 gut      Wir migrieren am Freitag.
 schwer   Eine Überprüfung der Konfiguration ist erforderlich.
@@ -208,7 +209,7 @@ default sentence architecture rather than because the contrast is real.
 
 ## Register
 
-{{user.name}}'s German notes are terse and decision-first. A comparison goes in a table.
-The decision goes in bold. Something superseded gets a `→` line pointing at
+The German register to match is terse and decision-first. A comparison goes
+in a table. The decision goes in bold. Something superseded gets a `→` line pointing at
 what replaced it, rather than being deleted. Match that shape and resist
 turning a note into an essay.

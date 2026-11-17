@@ -29,9 +29,12 @@ test:
 lint:
 	npx --yes markdownlint-cli2 "**/*.md"
 
-# Filled in by Task 13.
+# The repository's own prose, held to the style it teaches. The rule pass
+# only: the bad examples sit in code blocks, which the checker masks.
+DOCS := README.md skills/prose/SKILL.md skills/prose/references/*.md DESIGN.md commands/setup.md
+
 doccheck:
-	@echo "doccheck: not written yet" >&2; exit 1
+	skills/prose/bin/prose-check --no-lt $(DOCS)
 
 # The reference checker against its own fixture, with no settings and no
 # skill values on the machine.
