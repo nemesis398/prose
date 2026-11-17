@@ -438,9 +438,9 @@ read_languagetool :: proc(
 // `.None`. For the chosen backend `env.server` beats `s.server`,
 // `env.username` beats `s.username`, and the key comes from the first of:
 // `env.api_key`; the rbw item `s.key_item`, when `key_lookup.rbw` is set;
-// the credentials file `key_lookup.credentials_path`, one
-// `LANGUAGETOOL_API_KEY=...` line, refused when its mode is wider than 600
-// (the mode is not checked on Windows). The key is never taken from the
+// the credentials file `key_lookup.credentials_path`, holding only the key
+// and refused when its mode is wider than 600 (the mode is not checked on
+// Windows). The key is never taken from the
 // settings file.
 //
 // The second result is the problem that stops the check with exit 2: a
@@ -567,7 +567,7 @@ find_key :: proc(
 		cred = "$XDG_CONFIG_HOME/prose/credentials"
 	}
 	problem = fmt.aprintf(
-		"LanguageTool Premium has no key: set " + ENV_API_KEY + ", or use %s, or put " + ENV_API_KEY + "=... in %s (mode 600)",
+		"LanguageTool Premium has no key: set " + ENV_API_KEY + ", or use %s, or put the key alone in %s (mode 600)",
 		item,
 		cred,
 		allocator = allocator,
@@ -607,22 +607,24 @@ read_credentials :: proc(path: string, allocator: runtime.Allocator) -> (key: st
 		return
 	}
 	defer delete(data, allocator)
-	return parse_dotenv_key(string(data), ENV_API_KEY, allocator), ""
+	return parse_credentials_key(string(data), allocator), ""
 }
 
-// parse_dotenv_key reads one key like `sed -n 's/^KEY=//p'`: the first
-// line that starts with `KEY=`, the value verbatim after the `=`. A carriage
-// return from a CRLF file is dropped. Nothing is executed or expanded. An
-// empty value is no value.
+// parse_credentials_key reads the key from the credentials file's text,
+// which holds only the key: the first non-blank line, with surrounding
+// whitespace (a CRLF's carriage return too) trimmed. A line in the shape of
+// a dotenv line, `LANGUAGETOOL_API_KEY=KEY`, is tolerated and loses its
+// prefix. Nothing is executed or expanded. A blank file is no key.
 @(private = "file")
-parse_dotenv_key :: proc(text, name: string, allocator: runtime.Allocator) -> string {
-	prefix := strings.concatenate({name, "="}, context.temp_allocator)
+parse_credentials_key :: proc(text: string, allocator: runtime.Allocator) -> string {
 	rest := text
 	for line in strings.split_lines_iterator(&rest) {
-		if strings.has_prefix(line, prefix) {
-			value := strings.trim_right(line[len(prefix):], "\r")
-			return strings.clone(value, allocator) if value != "" else ""
+		value := strings.trim_space(line)
+		if value == "" {
+			continue
 		}
+		value = strings.trim_space(strings.trim_prefix(value, ENV_API_KEY + "="))
+		return strings.clone(value, allocator) if value != "" else ""
 	}
 	return ""
 }

@@ -419,7 +419,7 @@ the_key_from_the_variable_beats_rbw :: proc(t: ^testing.T) {
 rbw_beats_the_credentials_file_and_gets_the_item_name :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
-	cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-KEY\n")
+	cred := put(t, dir, "credentials", "FILE-KEY\n")
 	defer delete(cred)
 	s := prose.Settings {
 		backend  = prose.Backend_Kind.Premium,
@@ -439,7 +439,7 @@ rbw_beats_the_credentials_file_and_gets_the_item_name :: proc(t: ^testing.T) {
 rbw_is_not_asked_without_an_item_and_may_be_absent :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
-	cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-KEY\n")
+	cred := put(t, dir, "credentials", "FILE-KEY\n")
 	defer delete(cred)
 	// No keyItem: rbw (which would answer) is never consulted.
 	s := prose.Settings {
@@ -461,7 +461,7 @@ rbw_is_not_asked_without_an_item_and_may_be_absent :: proc(t: ^testing.T) {
 }
 
 @(test)
-the_credentials_file_is_read_like_a_dotenv_line :: proc(t: ^testing.T) {
+the_credentials_file_holds_the_bare_key :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
 	s := prose.Settings {
@@ -472,14 +472,21 @@ the_credentials_file_is_read_like_a_dotenv_line :: proc(t: ^testing.T) {
 		content, key: string,
 	}
 	cases := [?]Case {
+		// The file holds only the key.
+		{"abc\n", "abc"},
+		{"abc", "abc"},
+		{"  abc \t\n", "abc"},
+		// The first non-blank line; blank lines before it do not count.
+		{"\n  \n\nabc\nsecond\n", "abc"},
+		// A CRLF file does not put the carriage return into the key.
+		{"abc\r\n", "abc"},
+		// The dotenv shape is tolerated: the prefix goes.
 		{"LANGUAGETOOL_API_KEY=abc\n", "abc"},
 		{"LANGUAGETOOL_API_KEY=abc", "abc"},
-		// The first matching line, the value verbatim after the first "=".
-		{"# note\nOTHER=1\nLANGUAGETOOL_API_KEY=a b#c=d \nLANGUAGETOOL_API_KEY=second\n", "a b#c=d "},
-		// A CRLF file does not put the carriage return into the key.
-		{"LANGUAGETOOL_API_KEY=abc\r\n", "abc"},
-		// The key is not read from a line that only looks like it.
-		{" LANGUAGETOOL_API_KEY=x\nexport LANGUAGETOOL_API_KEY=y\nLANGUAGETOOL_API_KEY=z\n", "z"},
+		{"  LANGUAGETOOL_API_KEY=abc  \r\n", "abc"},
+		// Nothing is expanded or cut: an inner "=", "#" and space stay.
+		{"a=b#c d\n", "a=b#c d"},
+		{"OTHER=1\n", "OTHER=1"},
 	}
 	for c, i in cases {
 		cred := put(t, dir, "credentials", c.content)
@@ -489,8 +496,8 @@ the_credentials_file_is_read_like_a_dotenv_line :: proc(t: ^testing.T) {
 		testing.expectf(t, problem == "", "case %d: %s", i, problem)
 		testing.expectf(t, b.key == c.key, "case %d: key %q, want %q", i, b.key, c.key)
 	}
-	// A file without the line, with an empty value, or empty is no key.
-	for content in ([?]string{"", "OTHER=1\n", "LANGUAGETOOL_API_KEY=\n", "LANGUAGETOOL_API_KEY\n"}) {
+	// An empty or blank file, or a prefix with nothing after it, is no key.
+	for content in ([?]string{"", "\n", "  \r\n\t\n", "LANGUAGETOOL_API_KEY=\n", "LANGUAGETOOL_API_KEY= \n"}) {
 		cred := put(t, dir, "credentials", content)
 		defer delete(cred)
 		b, problem := choose(t, s, {}, {credentials_path = cred})
@@ -511,7 +518,7 @@ a_credentials_file_wider_than_600_is_refused :: proc(t: ^testing.T) {
 		username = "u",
 	}
 	for mode in ([?]int{0o644, 0o640, 0o604, 0o660, 0o666, 0o610, 0o601}) {
-		cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-SECRET\n", mode)
+		cred := put(t, dir, "credentials", "FILE-SECRET\n", mode)
 		defer delete(cred)
 		b, problem := choose(t, s, {}, {credentials_path = cred})
 		defer done(&b, problem)
@@ -523,14 +530,14 @@ a_credentials_file_wider_than_600_is_refused :: proc(t: ^testing.T) {
 	}
 	// 600, 400 and 700 are fine: only group and other count.
 	for mode in ([?]int{0o600, 0o400, 0o700}) {
-		cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-SECRET\n", mode)
+		cred := put(t, dir, "credentials", "FILE-SECRET\n", mode)
 		defer delete(cred)
 		b, problem := choose(t, s, {}, {credentials_path = cred})
 		defer done(&b, problem)
 		testing.expectf(t, problem == "" && b.key == "FILE-SECRET", "mode %o: %q", mode, problem)
 	}
 	// A wider file is not looked at when a better source has the key.
-	cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-SECRET\n", 0o644)
+	cred := put(t, dir, "credentials", "FILE-SECRET\n", 0o644)
 	defer delete(cred)
 	b, problem := choose(t, s, {api_key = "ENV-KEY"}, {credentials_path = cred})
 	defer done(&b, problem)
