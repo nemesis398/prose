@@ -1,0 +1,14 @@
+{
+ "length": 923,
+ "blocks": [
+  {"start": 0, "end": 18, "lang": "de"},
+  {"start": 20, "end": 31, "lang": "de"},
+  {"start": 33, "end": 290, "lang": "de"},
+  {"start": 292, "end": 303, "lang": "de"},
+  {"start": 305, "end": 512, "lang": "de"},
+  {"start": 514, "end": 522, "lang": "de"},
+  {"start": 524, "end": 716, "lang": "en"},
+  {"start": 718, "end": 737, "lang": "en"},
+  {"start": 739, "end": 923, "lang": "de"}
+ ]
+}

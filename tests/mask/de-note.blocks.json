@@ -1,0 +1,10 @@
+{
+ "length": 1222,
+ "blocks": [
+  {"start": 0, "end": 28, "lang": "de"},
+  {"start": 30, "end": 474, "lang": "de"},
+  {"start": 476, "end": 703, "lang": "de"},
+  {"start": 705, "end": 998, "lang": "de"},
+  {"start": 1000, "end": 1222, "lang": "de"}
+ ]
+}

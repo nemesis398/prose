@@ -1,0 +1,22 @@
+{
+ "length": 2583,
+ "blocks": [
+  {"start": 0, "end": 23, "lang": "de"},
+  {"start": 25, "end": 36, "lang": "de"},
+  {"start": 38, "end": 57, "lang": "de"},
+  {"start": 59, "end": 1041, "lang": "de"},
+  {"start": 1043, "end": 1063, "lang": "de"},
+  {"start": 1065, "end": 1430, "lang": "en"},
+  {"start": 1432, "end": 1457, "lang": "en"},
+  {"start": 1459, "end": 1585, "lang": "de"},
+  {"start": 1587, "end": 1619, "lang": "de"},
+  {"start": 1621, "end": 1688, "lang": "de"},
+  {"start": 1690, "end": 1833, "lang": "de"},
+  {"start": 1835, "end": 1858, "lang": "de"},
+  {"start": 1860, "end": 1932, "lang": "de"},
+  {"start": 1934, "end": 2003, "lang": "de"},
+  {"start": 2005, "end": 2302, "lang": "de"},
+  {"start": 2304, "end": 2467, "lang": "de"},
+  {"start": 2469, "end": 2583, "lang": "de"}
+ ]
+}
