@@ -624,6 +624,10 @@ read_credentials :: proc(path: string, allocator: runtime.Allocator) -> (key: st
 			)
 			return
 		}
+	} else {
+		// The mode is not checked on Windows, and -vet refuses an unused
+		// variable.
+		_ = mode
 	}
 	data, rerr := os.read_entire_file(path, allocator)
 	if rerr != nil {
