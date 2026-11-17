@@ -90,7 +90,7 @@ option as recommended: where the user's text may go is their decision.
 
 | Option | Line to show |
 | --- | --- |
-| `none` | Nothing leaves this machine. The rules run; grammar is not checked, and English spelling only through hunspell when it is installed. |
+| `none` | Nothing leaves this machine. The rules run; grammar is not checked, and English spelling only through hunspell when it is installed (never on Windows). |
 | `public` | Your text goes to LanguageTool's free public server, `api.languagetool.org`. No account; rate-limited, free rules only. |
 | `premium` | Your text goes to LanguageTool's Premium API, `api.languagetoolplus.com`, under your account. Needs the account's login and API key. |
 | `server` | Your text goes to the LanguageTool server at the URL you give, such as one you run yourself. |

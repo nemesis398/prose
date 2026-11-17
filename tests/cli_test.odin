@@ -661,14 +661,14 @@ a_refusing_backend_is_exit_2 :: proc(t: ^testing.T) {
 }
 
 // Backend none with LanguageTool asked for: the note says it is off, in
-// both outputs, and the local spelling pass runs.
+// both outputs, and the local spelling pass runs, except on Windows.
 @(test)
 backend_none_says_languagetool_is_off :: proc(t: ^testing.T) {
 	text := "This is the colr that you will have.\n"
 	j := cli({"--json", "--stdin"}, {hunspell_command = #directory + "stub/hunspell"}, text)
 	defer cli_done(&j)
 	testing.expectf(t, strings.contains(j.out, `"note": "language: en | ` + OFF + `"`), "%s", j.out)
-	testing.expectf(t, strings.contains(j.out, `"rule": "HUNSPELL"`), "%s", j.out)
+	testing.expectf(t, strings.contains(j.out, `"rule": "HUNSPELL"`) == (ODIN_OS != .Windows), "%s", j.out)
 	testing.expect_value(t, j.code, 0)
 	x := cli({"--stdin"}, {}, text)
 	defer cli_done(&x)

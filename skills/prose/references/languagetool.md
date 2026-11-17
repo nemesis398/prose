@@ -116,6 +116,8 @@ probe shows it: `--selftest` reports "free rules only".
 With `none`, English spelling is still checked locally by hunspell when it is
 installed: `$PROSE_HUNSPELL`, else `hunspell` on `PATH`. Its findings are
 warnings named `HUNSPELL`. German spelling and all grammar wait for a backend.
+On Windows, backend `none` checks no spelling at all: hunspell is not run
+there, because the checker cannot stop a hung hunspell wrapper on Windows.
 
 ## Limits
 

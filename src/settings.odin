@@ -771,10 +771,12 @@ Stdin_Feed :: struct {
 }
 
 // feed_stdin writes all of the order's data into the pipe and closes it, so
-// the child sees the end of its input. The pipe is non-blocking and a full
-// pipe is retried every millisecond, so the writer never sits in a write
-// that nothing will end: it stops at the first write error (the child has
-// gone away) and when `stop` is set. It owns `w` and closes it.
+// the child sees the end of its input. It stops at the first write error
+// (the child has gone away) and when `stop` is set. On POSIX the pipe is
+// non-blocking and a full pipe is retried every millisecond, so the writer
+// never sits in a write that nothing will end. On Windows a write waits for
+// room, and a writer stuck in it never looks at `stop` (see
+// pipe_windows.odin). It owns `w` and closes it.
 @(private = "file")
 feed_stdin :: proc(t: ^thread.Thread) {
 	feed := (^Stdin_Feed)(t.data)
@@ -809,6 +811,12 @@ feed_stdin :: proc(t: ^thread.Thread) {
 // otherwise when this procedure tells it to stop, which it does before it
 // returns. That last is what bounds the run when the command is a wrapper
 // whose own child holds the pipes: killing the wrapper breaks nothing.
+//
+// On POSIX only. On Windows the writer blocks in its write and never sees
+// the order to stop, so for such a wrapper this procedure waits in the
+// join for as long as the wrapper's child lives, whatever `timeout` says.
+// The timeout bounds the run there only for a command that holds its pipes
+// itself. That is why the hunspell pass does not run on Windows.
 command_with_input :: proc(
 	command: []string,
 	input: []byte,
@@ -855,8 +863,8 @@ command_with_input :: proc(
 		// Whatever happened, end the writer before the join. Killing the child
 		// does not do it: a wrapper script's own child may hold the read end
 		// of the pipe, so the pipe never breaks, and the writer is told to stop
-		// instead. The output pipe closes first so a child blocked on it can
-		// go.
+		// instead (which a writer blocked on Windows does not see). The output
+		// pipe closes first so a child blocked on it can go.
 		if !done {
 			_ = os.process_kill(proc_)
 			_, _ = os.process_wait(proc_, time.Second)

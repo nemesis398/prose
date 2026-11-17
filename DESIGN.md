@@ -154,7 +154,8 @@ file, and `prose-check --rules` prints it.
 
 **Nothing leaves the machine until the user chooses a backend.** A fresh
 install runs the rule pass, checks English spelling with hunspell when it is
-installed, and says that LanguageTool is off. A backend set in the file wins
+installed (not on Windows, where the checker cannot bound a hung hunspell
+wrapper), and says that LanguageTool is off. A backend set in the file wins
 over the environment; without one, exported variables still choose, so a setup
 that only exports them keeps working. No backend ever stands in for another.
 

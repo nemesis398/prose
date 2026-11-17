@@ -74,6 +74,12 @@ run_hunspell :: proc(
 // exit still counts. Allocated with `allocator`; free the findings with
 // `findings_destroy` on `found[:]`. `starts` is not needed and is part of the
 // signature of the passes.
+//
+// On Windows the pass does nothing and starts no process, so backend `none`
+// checks no spelling there. `command_with_input` cannot bound the run on
+// Windows when hunspell is a wrapper whose own child holds the pipe: the
+// writer thread then blocks in a write that nothing ends, and the checker
+// would hang with it.
 run_hunspell_with :: proc(
 	command: string,
 	timeout: time.Duration,
@@ -87,6 +93,9 @@ run_hunspell_with :: proc(
 	found: [dynamic]Finding,
 ) {
 	found = make([dynamic]Finding, allocator)
+	when ODIN_OS == .Windows {
+		return
+	}
 
 	input, any_english := hunspell_input(src, m, blocks)
 	defer delete(input)

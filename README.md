@@ -128,7 +128,8 @@ where your text goes:
 | `server` | the server at the URL you give, such as your own | the rules that server runs |
 
 With `none`, every report says `LanguageTool is off`, and the skill tells you
-that grammar was not checked instead of calling the text clean. A backend
+that grammar was not checked instead of calling the text clean. On Windows,
+backend `none` checks no spelling at all, as hunspell is not run there. A backend
 that refuses or does not answer stops the check with exit 2; no other backend
 stands in for it.
 

@@ -8,7 +8,11 @@ import "core:os"
 ignore_sigpipe :: proc() {}
 
 // set_nonblocking does nothing on Windows, where the writer blocks in
-// `write_some`; the child's death, or `process_kill`, ends it.
+// `write_some` until the child reads or the pipe breaks. Killing the child
+// breaks it only when no other process holds the read end: a wrapper's own
+// child that inherited it keeps the write waiting for ever, and the writer
+// never sees `stop`. So `command_with_input` is not bounded here, and the
+// hunspell pass does not run on Windows.
 set_nonblocking :: proc(f: ^os.File) {}
 
 Write_Result :: enum {
