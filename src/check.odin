@@ -9,12 +9,16 @@ import "core:unicode/utf8"
 // `use_lt` adds the LanguageTool pass, `picky` its picky mode. `backend` is
 // the LanguageTool to ask, from `choose_backend`, and `words` the accepted
 // words, from `load_words`; both belong to the caller, and their zero values
-// (no backend, no words) leave the checks as they were.
+// (no backend, no words) leave the checks as they were. `hunspell_command`
+// is the program for the local spelling pass, which runs with `use_lt` and no
+// backend; "" means `$PROSE_HUNSPELL`, else `hunspell` on PATH. It exists so
+// a test can name a stub without touching the process environment.
 Check_Options :: struct {
-	lang:          string,
-	use_lt, picky: bool,
-	backend:       Backend,
-	words:         Word_Set,
+	lang:             string,
+	use_lt, picky:    bool,
+	backend:          Backend,
+	words:            Word_Set,
+	hunspell_command: string,
 }
 
 // Why a text could not be checked. An empty `message` means it could. A
@@ -83,6 +87,14 @@ check_text_timed :: proc(
 		append(&findings, ..lt[:])
 		delete(lt)
 		pass_note = note
+		if opts.backend.kind == .None {
+			// No LanguageTool to ask: the local English spelling pass stands
+			// in. It leaves the note as it is.
+			command := opts.hunspell_command if opts.hunspell_command != "" else hunspell_program()
+			local := run_hunspell_with(command, HUNSPELL_TIMEOUT, src, &m, blocks, starts, opts.words, allocator)
+			append(&findings, ..local[:])
+			delete(local)
+		}
 	}
 
 	sort_findings(findings[:])

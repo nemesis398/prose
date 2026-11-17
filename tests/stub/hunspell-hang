@@ -1,0 +1,4 @@
+#!/bin/sh
+# A hunspell that never answers: it reads nothing and stays until it is
+# killed. The tests give the checker a short timeout and expect no findings.
+exec sleep 60

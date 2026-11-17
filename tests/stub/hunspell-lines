@@ -1,0 +1,6 @@
+#!/bin/sh
+# A hunspell that calls `colr` the one misspelled word of every input line,
+# and answers as fast as the input arrives, so a long text makes the output
+# larger than a pipe buffer in both directions.
+echo '@(#) International Ispell Version 3.2.06 (but really the prose test stub)'
+exec sed 's/.*/\& colr 1 0: color\n/'

@@ -1,0 +1,6 @@
+#!/bin/sh
+# A hunspell that dies at once, without reading its input, as one with no
+# en_US dictionary does. A checker that is still writing the text into its
+# stdin must not crash on the broken pipe.
+echo "Can't open affix or dictionary files for dictionary named \"en_US\"." >&2
+exit 1

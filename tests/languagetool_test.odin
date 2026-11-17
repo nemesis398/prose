@@ -473,7 +473,7 @@ no_backend_sends_nothing :: proc(t: ^testing.T) {
 	}
 	md := read_corpus("fixture.md")
 	defer delete(md)
-	result, err := prose.check_text(md, {lang = "auto", use_lt = true})
+	result, err := prose.check_text(md, {lang = "auto", use_lt = true, hunspell_command = "/nonexistent"})
 	defer prose.file_result_destroy(&result)
 	defer delete(err.message)
 	plain, _ := prose.check_text(md, {lang = "auto"})

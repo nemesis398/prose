@@ -1,0 +1,38 @@
+#!/bin/sh
+# A stand-in for `hunspell -d en_US -a`, for the tests. It speaks the same
+# pipe protocol as the real one: a banner line, then for each input line one
+# result line per word, then a blank line. It knows three kinds of word:
+#
+#   colr      misspelled, with a suggestion: `& colr 1 OFFSET: color`
+#   zz...     misspelled, no suggestion: `# zzword OFFSET`
+#   the rest  correct: `*`
+#
+# OFFSET counts characters from the start of the line as sent, an escaping
+# `^` included, as the real hunspell counts it. A word is a run of letters
+# and apostrophes. A line that starts with one of the characters the real
+# hunspell takes as a command (and not with `^`) gets no answer at all, not
+# even the blank line, which is why the checker escapes every line with `^`.
+# Arguments are ignored.
+
+printf '@(#) International Ispell Version 3.2.06 (but really the prose test stub)\n'
+set -f
+while IFS= read -r line; do
+	case $line in
+	'^'*) ;;
+	'*'* | '&'* | '@'* | '+'* | '-'* | '~'* | '#'* | '!'* | '%'* | '`'*) continue ;;
+	esac
+	rest=$line
+	off=0
+	for tok in $(printf '%s\n' "$line" | tr -c "A-Za-z'" ' '); do
+		before=${rest%%"$tok"*}
+		off=$((off + ${#before}))
+		case $tok in
+		colr) printf '& colr 1 %s: color\n' "$off" ;;
+		zz*) printf '# %s %s\n' "$tok" "$off" ;;
+		*) printf '*\n' ;;
+		esac
+		rest=${rest#*"$tok"}
+		off=$((off + ${#tok}))
+	done
+	printf '\n'
+done

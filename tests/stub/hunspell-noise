@@ -1,0 +1,12 @@
+#!/bin/sh
+# A hunspell that answers with lines the parser must survive: a result line
+# with no word in it, a banner-like line, a command echo, and then output
+# for the first input line only. It exits non-zero, which the reference
+# ignores.
+echo '@(#) banner'
+echo '&'
+echo '#'
+echo '? zzq 0 0: zzr'
+echo '& colr 1 0: color'
+echo
+exit 3
