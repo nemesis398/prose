@@ -152,7 +152,8 @@ A key set to `null` is deleted.
 - Set `languageRule` to the rule, or to `null` for "No rule". Leave it out
   when the user kept the stored one.
 - Write every key that step 2 found broken, as it says there.
-- Never add a key such as `apiKey`; the checker refuses it.
+- Never add a key such as `apiKey`, `key`, `password` or `token`; the checker
+  refuses them.
 
 Escape `"` and `\` in every string, so that the object is valid JSON. For
 example:

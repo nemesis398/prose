@@ -41,9 +41,9 @@ setup_fail :: proc(path: string, allocator: runtime.Allocator, format: string, a
 // The keys given replace the stored ones; all others are kept, unknown ones
 // with their JSON values. `languagetool` is merged key by key. A key set to
 // `null` is deleted, which is how a backend switch drops `server`; a
-// `languagetool` left empty goes too. A key named `apiKey` (any case,
-// `api_key` too), at the top or inside `languagetool`, is refused: the key
-// never goes in the settings file.
+// `languagetool` left empty goes too. A key named `apiKey`, `api_key`,
+// `key`, `password` or `token` (any case), at the top or inside
+// `languagetool`, is refused: the key never goes in the settings file.
 //
 // The result is stable, pretty JSON: two-space indent, `languageRule`,
 // `ignoreWords`, `languagetool` (`backend`, `server`, `username`,
@@ -93,7 +93,12 @@ parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.
 // is_key_name tells whether `name` is a spelling of the API key's name.
 @(private = "file")
 is_key_name :: proc(name: string) -> bool {
-	return strings.equal_fold(name, "apiKey") || strings.equal_fold(name, "api_key")
+	for secret in ([?]string{"apiKey", "api_key", "key", "password", "token"}) {
+		if strings.equal_fold(name, secret) {
+			return true
+		}
+	}
+	return false
 }
 
 // apply_object is `apply_values` for values already parsed. It takes the

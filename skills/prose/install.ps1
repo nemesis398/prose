@@ -69,7 +69,9 @@ function Receive-File([string]$Url, [string]$Out, [string]$Version) {
             # Windows PowerShell 5.1 starts with TLS 1.0 and 1.1 only.
             [System.Net.ServicePointManager]::SecurityProtocol =
                 [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $Url -OutFile $Out -UseBasicParsing -ErrorAction Stop
+            # A timeout, so that a stalled connection cannot hang the install. In
+            # PowerShell 7 it bounds the whole transfer, in 5.1 each read.
+            Invoke-WebRequest -Uri $Url -OutFile $Out -UseBasicParsing -TimeoutSec 300 -ErrorAction Stop
         } else {
             throw 'only https and file URLs are allowed'
         }

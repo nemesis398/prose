@@ -209,7 +209,7 @@ exit_2_when_the_check_cannot_run :: proc(t: ^testing.T) {
 		c := cli({"--no-lt", "/nonexistent/x.md"}, {})
 		defer cli_done(&c)
 		testing.expect_value(t, c.code, 2)
-		testing.expect_value(t, c.err, "not a file: /nonexistent/x.md\n")
+		testing.expect_value(t, c.err, "prose: not a file: /nonexistent/x.md\n")
 		testing.expect_value(t, c.out, "")
 	}
 	{
@@ -217,7 +217,7 @@ exit_2_when_the_check_cannot_run :: proc(t: ^testing.T) {
 		c := cli({"--no-lt", CORPUS}, {})
 		defer cli_done(&c)
 		testing.expect_value(t, c.code, 2)
-		testing.expect(t, strings.has_prefix(c.err, "not a file: "))
+		testing.expect(t, strings.has_prefix(c.err, "prose: not a file: "))
 	}
 	{
 		c := cli({}, {})

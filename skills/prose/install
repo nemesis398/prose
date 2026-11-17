@@ -116,9 +116,12 @@ trap 'exit 143' TERM
 trap 'exit 129' HUP
 
 # fetch URL FILE: curl runs in the background and is waited for, so that a
-# signal reaches the trap at once instead of after the download.
+# signal reaches the trap at once instead of after the download. A transfer
+# that stays under 1 KiB/s for 30 seconds is given up on, so a stalled
+# connection cannot hang the install.
 fetch() {
 	curl -fsL --proto '=https,file' --proto-redir '=https' --connect-timeout 20 \
+		--speed-limit 1024 --speed-time 30 \
 		-o "$2" "$1" &
 	curl_pid=$!
 	rc=0

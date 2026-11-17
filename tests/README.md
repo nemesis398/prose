@@ -22,7 +22,7 @@ has to reproduce them exactly. They are the expected values, so a change to
 one is a change of behavior and needs a reason.
 
 The reference is gone from the tree. It lives in ravnix's history (the
-`skills/prose/scripts/` of the skill) and in this repository's history: the
+`claude/skills/prose/scripts/` of the skill) and in this repository's history: the
 last commit that holds `reference/` is `2db5d1a`, so
 `git show 2db5d1a:reference/check.py` reads it, and
 `git worktree add DIR 2db5d1a` gives the whole directory.

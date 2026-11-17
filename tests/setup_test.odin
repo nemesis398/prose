@@ -458,6 +458,16 @@ the_key_never_goes_in_the_file :: proc(t: ^testing.T) {
 			`{"languagetool": {"backend": "premium", "apiKey": null}}`,
 			`{"apikey": "SECRET-KEY"}`,
 			`{"languageRule": "x", "api_key": "SECRET-KEY"}`,
+			`{"key": "SECRET-KEY"}`,
+			`{"KEY": "SECRET-KEY"}`,
+			`{"password": "SECRET-KEY"}`,
+			`{"Password": "SECRET-KEY"}`,
+			`{"token": "SECRET-KEY"}`,
+			`{"TOKEN": "SECRET-KEY"}`,
+			`{"languagetool": {"key": "SECRET-KEY"}}`,
+			`{"languagetool": {"apikey": "SECRET-KEY"}}`,
+			`{"languagetool": {"PassWord": "SECRET-KEY"}}`,
+			`{"languagetool": {"backend": "premium", "token": "SECRET-KEY"}}`,
 		}) {
 		c := values(dir, bad)
 		testing.expectf(t, c.code == 2, "%s: exit %d", bad, c.code)

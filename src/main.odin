@@ -113,6 +113,9 @@ main :: proc() {
 
 @(private = "file")
 main_run :: proc() -> int {
+	// A reader that closes early (`| head`) must give a failed write, which
+	// the flush below turns into a non-zero exit, not a SIGPIPE death.
+	ignore_sigpipe()
 	env := run_env_from_os()
 	defer run_env_destroy(&env)
 	out: bufio.Writer
@@ -304,7 +307,7 @@ check_sources :: proc(a: Cli_Args, stdin: io.Reader, stdout, stderr: io.Writer, 
 	}
 	for f in a.files {
 		if !os.is_file(f) {
-			fmt.wprintf(stderr, "not a file: %s\n", f)
+			fmt.wprintf(stderr, "prose: not a file: %s\n", f)
 			return 2
 		}
 		data, err := os.read_entire_file(f, context.allocator)
