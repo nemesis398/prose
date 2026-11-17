@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:slice"
 import "core:strings"
+import "core:time"
 
 // Which LanguageTool the grammar pass talks to, if any. `None` sends
 // nothing anywhere. It is the zero value, so a `Backend` or `Check_Options`
@@ -283,6 +284,7 @@ parse_settings :: proc(
 		for k in unknown {
 			delete(k, allocator)
 		}
+		delete(unknown)
 	}
 	// Sorted keys, so that with two mistakes the message does not depend on
 	// the map's order.
@@ -629,23 +631,31 @@ parse_credentials_key :: proc(text: string, allocator: runtime.Allocator) -> str
 	return ""
 }
 
+// How long the rbw calls may take. A hung rbw-agent must not hang a check
+// that runs unattended in a hook, and `rbw get` must not sit in a pinentry
+// that the vault locking between the two calls would open.
+RBW_UNLOCKED_TIMEOUT :: 20 * time.Second
+RBW_GET_TIMEOUT :: 30 * time.Second
+
 // rbw_lookup is the real `Key_Lookup.rbw`: it asks the rbw agent for the
 // password of the Bitwarden item `item`, by name or id. It runs
-// `rbw unlocked` first and gives up when that exits non-zero, so a locked
-// vault, a missing rbw, a failed `rbw get` and an empty answer are all "not
-// available" and nothing ever prompts (the child has no stdin). The
-// trailing newline is trimmed. The result is allocated with
-// `context.temp_allocator`, as `Key_Lookup` says. An item that starts with a
-// dash is refused, so that it cannot be read as an option.
+// `rbw unlocked` first (at most `RBW_UNLOCKED_TIMEOUT`) and gives up when
+// that exits non-zero, then `rbw get` (at most `RBW_GET_TIMEOUT`). A locked
+// vault, a missing rbw, a failed `rbw get`, an empty answer and a call that
+// runs out of time are all "not available", and nothing ever prompts (the
+// child has no stdin). The trailing newline is trimmed. The result is
+// allocated with `context.temp_allocator`, as `Key_Lookup` says. An item
+// that starts with a dash is refused, so that it cannot be read as an
+// option.
 rbw_lookup :: proc(item: string) -> (string, bool) {
 	if item == "" || item[0] == '-' {
 		return "", false
 	}
-	if !rbw_succeeds({"rbw", "unlocked"}, nil) {
+	if _, ok := command_output({"rbw", "unlocked"}, RBW_UNLOCKED_TIMEOUT, false); !ok {
 		return "", false
 	}
-	out: []byte
-	if !rbw_succeeds({"rbw", "get", item}, &out) {
+	out, ok := command_output({"rbw", "get", item}, RBW_GET_TIMEOUT, true)
+	if !ok {
 		return "", false
 	}
 	defer delete(out)
@@ -656,21 +666,75 @@ rbw_lookup :: proc(item: string) -> (string, bool) {
 	return strings.clone(key, context.temp_allocator), true
 }
 
-// rbw_succeeds runs `command` to the end and reports whether it exited 0.
-// With `stdout` it hands back what the command printed, to be deleted by the
-// caller; stderr is dropped, as it may name the item.
+// The most `command_output` keeps of what a command printed.
 @(private = "file")
-rbw_succeeds :: proc(command: []string, stdout: ^[]byte) -> bool {
-	state, out, errout, err := os.process_exec(os.Process_Desc{command = command}, context.allocator)
-	delete(errout)
-	if err != nil || !state.exited || state.exit_code != 0 {
-		delete(out)
-		return false
+MAX_COMMAND_OUTPUT :: 64 << 10
+
+// command_output runs `command` and reports whether it exited 0 within
+// `timeout`. A command that is missing, fails to start, exits non-zero, or is
+// still running when the time is up (it is then killed) gives `ok == false`.
+// stdin is empty and stderr is dropped, as it may name the item. With
+// `capture`, `out` is what the command printed to stdout, up to 64 KiB, read
+// without waiting for a grandchild that still holds the pipe; the caller
+// deletes it. Without, `out` is nil.
+command_output :: proc(
+	command: []string,
+	timeout: time.Duration,
+	capture: bool,
+) -> (
+	out: []byte,
+	ok: bool,
+) {
+	desc := os.Process_Desc {
+		command = command,
 	}
-	if stdout != nil {
-		stdout^ = out
-	} else {
-		delete(out)
+	r, w: ^os.File
+	if capture {
+		perr: os.Error
+		r, w, perr = os.pipe()
+		if perr != nil {
+			return nil, false
+		}
+		desc.stdout = w
 	}
-	return true
+	defer if capture {
+		_ = os.close(r)
+	}
+	proc_, serr := os.process_start(desc)
+	if capture {
+		// The parent's copy of the write end; with it open the pipe never ends.
+		_ = os.close(w)
+	}
+	if serr != nil {
+		return nil, false
+	}
+	state, werr := os.process_wait(proc_, timeout)
+	if werr != nil {
+		if werr == .Timeout {
+			_ = os.process_kill(proc_)
+			_, _ = os.process_wait(proc_, time.Second)
+		}
+		return nil, false
+	}
+	if !state.exited || state.exit_code != 0 {
+		return nil, false
+	}
+	if !capture {
+		return nil, true
+	}
+
+	buf: [dynamic]byte
+	chunk: [4096]byte
+	for len(buf) < MAX_COMMAND_OUTPUT {
+		has, perr := os.pipe_has_data(r)
+		if !has || perr != nil {
+			break
+		}
+		n, rerr := os.read(r, chunk[:])
+		append(&buf, ..chunk[:n])
+		if n == 0 || rerr != nil {
+			break
+		}
+	}
+	return buf[:], true
 }

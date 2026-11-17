@@ -3,6 +3,7 @@ package prose_tests
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "core:time"
 import prose "../src"
 
 // Every test makes its own directory and removes it at the end, so the tests
@@ -170,6 +171,22 @@ a_file_that_is_present_but_unusable_is_an_error_naming_it :: proc(t: ^testing.T)
 	expect_unusable(t, `{"languagetool": {"username": 1}}`, `"languagetool.username" must be a string`)
 	expect_unusable(t, `{"languagetool": {"keyItem": []}}`, `"languagetool.keyItem" must be a string`)
 	expect_unusable(t, `{"languagetool": {"server": {}}}`, `"languagetool.server" must be a string`)
+	// An unknown key read before the mistake must not leak with the error.
+	expect_unusable(
+		t,
+		`{"colour": 1, "languagetool": {"backend": "premuim"}}`,
+		`must be one of none, public, premium, server`,
+	)
+	expect_unusable(
+		t,
+		`{"a": 1, "languagetool": {"backend": "server"}}`,
+		`"languagetool.server" is needed`,
+	)
+	expect_unusable(
+		t,
+		`{"languagetool": {"colour": 1, "backend": "premuim"}, "a": 1}`,
+		`must be one of none, public, premium, server`,
+	)
 	// A server backend needs a URL.
 	expect_unusable(
 		t,
@@ -601,6 +618,53 @@ the_real_rbw_lookup_refuses_an_item_that_looks_like_an_option :: proc(t: ^testin
 	testing.expect(t, !ok)
 	_, ok = prose.rbw_lookup("")
 	testing.expect(t, !ok)
+}
+
+@(test)
+a_command_that_outruns_its_timeout_is_not_available :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	start := time.tick_now()
+	out, ok := prose.command_output({"sh", "-c", "sleep 5"}, time.Second, false)
+	defer delete(out)
+	elapsed := time.tick_since(start)
+	testing.expect(t, !ok)
+	testing.expectf(t, elapsed < 3 * time.Second, "took %v", elapsed)
+	// With capture too; the killed command's output is dropped.
+	start = time.tick_now()
+	out2, ok2 := prose.command_output({"sh", "-c", "echo partial; sleep 5"}, time.Second, true)
+	defer delete(out2)
+	testing.expect(t, !ok2 && len(out2) == 0)
+	testing.expect(t, time.tick_since(start) < 3 * time.Second)
+}
+
+@(test)
+command_output_reports_success_failure_and_absence :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	out, ok := prose.command_output({"sh", "-c", "printf 'key\\n'"}, 5 * time.Second, true)
+	defer delete(out)
+	testing.expect(t, ok)
+	testing.expect_value(t, string(out), "key\n")
+	// Without capture nothing is returned, and the exit status still counts.
+	out2, ok2 := prose.command_output({"sh", "-c", "echo dropped"}, 5 * time.Second, false)
+	testing.expect(t, ok2 && out2 == nil)
+	out3, ok3 := prose.command_output({"sh", "-c", "echo x; exit 1"}, 5 * time.Second, true)
+	testing.expect(t, !ok3 && out3 == nil)
+	out4, ok4 := prose.command_output({"/nonexistent/prose-no-such-command"}, 5 * time.Second, true)
+	testing.expect(t, !ok4 && out4 == nil)
+	// No stdin: a command that reads it sees the end at once, not a hang.
+	out5, ok5 := prose.command_output({"sh", "-c", "cat"}, 5 * time.Second, true)
+	defer delete(out5)
+	testing.expect(t, ok5 && len(out5) == 0)
+	// A grandchild that keeps the pipe open does not hold the read back.
+	start := time.tick_now()
+	out6, ok6 := prose.command_output({"sh", "-c", "echo hi; sleep 3 &"}, 5 * time.Second, true)
+	defer delete(out6)
+	testing.expect(t, ok6 && string(out6) == "hi\n")
+	testing.expect(t, time.tick_since(start) < 2 * time.Second)
 }
 
 // ---------------------------------------------------------------------------
