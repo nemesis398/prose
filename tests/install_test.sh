@@ -39,6 +39,19 @@ bin_empty() { # true when the bin directory is missing or has nothing in it
 	[ ! -d "$1" ] || [ -z "$(ls -A "$1")" ]
 }
 
+# The test's own sha256sum. Where there is only shasum, as on macOS, a
+# stand-in runs `shasum -a 256`, so the cases below work the same there.
+if ! real_sha=$(command -v sha256sum); then
+	real_shasum=$(command -v shasum) || {
+		echo "install_test.sh: needs sha256sum or shasum" >&2
+		exit 2
+	}
+	mkdir -p "$work/sha"
+	printf '#!/bin/sh\nexec "%s" -a 256 "$@"\n' "$real_shasum" >"$work/sha/sha256sum"
+	chmod 755 "$work/sha/sha256sum"
+	real_sha="$work/sha/sha256sum"
+fi
+
 # ---- the fake release -----------------------------------------------------
 
 release="$work/release"
@@ -46,7 +59,7 @@ mkdir -p "$release/v0.1.0"
 for p in linux-x86_64 linux-arm64 macos-arm64 windows-x86_64.exe; do
 	printf '#!/bin/sh\n# asset %s\necho "prose-check 0.1.0"\n' "$p" >"$release/v0.1.0/prose-check-$p"
 done
-(cd "$release/v0.1.0" && sha256sum prose-check-* >SHA256SUMS)
+(cd "$release/v0.1.0" && "$real_sha" prose-check-* >SHA256SUMS)
 
 # A release whose SHA256SUMS does not match the assets.
 bad_release="$work/bad-release"
@@ -105,8 +118,6 @@ esac
 exec "$real_env" "\$@"
 ENVEOF
 chmod 755 "$bsdenv/env"
-
-real_sha=$(command -v sha256sum)
 
 # ---- one run of the script --------------------------------------------------
 
