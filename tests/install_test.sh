@@ -129,22 +129,47 @@ setup_root() {
 	cp "$install_src" "$1/skills/prose/install"
 }
 
-# run ROOT [ARGS...]: runs the script with the fake uname first on PATH.
-# Sets $out (stdout and stderr, merged) and $rc. FAKE_OS and FAKE_ARCH, and
-# the PROSE_* variables, come from the environment of the caller.
-run() {
-	root=$1
+# invoke PATH [NAME=VALUE...] ROOT [ARGS...]: runs the script with PATH,
+# and with each NAME=VALUE in its environment only. Sets $root, $out (stdout
+# and stderr, merged) and $rc. FAKE_OS and FAKE_ARCH, and the PROSE_*
+# variables, come from the environment of the caller and the NAME=VALUE
+# words. A prefix assignment such as `X=1 run ...` would not do: before bash
+# 5.1, bash in POSIX mode (/bin/sh on macOS and on EL8) keeps it after a
+# function returns, and it leaks into every later case.
+invoke() {
+	inv_path=$1
 	shift
-	out=$(PATH="$fake:$PATH" HOME="$root/home" "$test_sh" "$root/skills/prose/install" "$@" 2>&1)
+	inv_n=0
+	for inv_a do
+		case $inv_a in
+		*=*) inv_n=$((inv_n + 1)) ;;
+		*) break ;;
+		esac
+	done
+	# Rotate the arguments into: NAME=VALUE... SHELL SCRIPT ARGS...
+	inv_i=0
+	for inv_a do
+		shift
+		if [ "$inv_i" -eq "$inv_n" ]; then
+			root=$inv_a
+			set -- "$@" "$test_sh" "$inv_a/skills/prose/install"
+		else
+			set -- "$@" "$inv_a"
+		fi
+		inv_i=$((inv_i + 1))
+	done
+	out=$(PATH="$inv_path" HOME="$root/home" "$real_env" "$@" 2>&1)
 	rc=$?
 }
 
+# run [NAME=VALUE...] ROOT [ARGS...]: invoke with the fake uname first on PATH.
+run() { invoke "$fake:$PATH" "$@"; }
+
 run_with_path() { # ROOT PATH [ARGS...]
-	root=$1
-	p=$2
+	rwp_root=$1
+	rwp_path=$2
 	shift 2
-	out=$(PATH="$p" HOME="$root/home" "$test_sh" "$root/skills/prose/install" "$@" 2>&1)
-	rc=$?
+	invoke "$rwp_path" "$rwp_root" "$@"
 }
 
 mtime_text() { find "$1" -prune -exec ls -ld {} + | awk '{print $6, $7, $8}'; }
@@ -213,7 +238,7 @@ suite_run() {
 		# shellcheck disable=SC2086 # the words are the point
 		set -- $combo
 		setup_root "$root"
-		FAKE_OS=$1 FAKE_ARCH=$2 run "$root"
+		run "FAKE_OS=$1" "FAKE_ARCH=$2" "$root"
 		check "install on $1 $2 exits 0 (got $rc: $out)" [ "$rc" -eq 0 ]
 		check "install on $1 $2 puts bin/prose-check in place" [ -x "$bin/prose-check" ]
 		got=$("$bin/prose-check" --version 2>&1)
@@ -230,7 +255,7 @@ suite_run() {
 		# shellcheck disable=SC2086 # the words are the point
 		set -- $combo
 		setup_root "$root"
-		FAKE_OS=$1 FAKE_ARCH=$2 run "$root"
+		run "FAKE_OS=$1" "FAKE_ARCH=$2" "$root"
 		check "$1 $2 is refused (rc $rc)" [ "$rc" -ne 0 ]
 		check "$1 $2 message says 'unsupported platform: $1' (got: $out)" contains "$out" "unsupported platform: $1"
 		check "$1 $2 message is one line" [ "$(lines "$out")" -eq 1 ]
@@ -239,7 +264,7 @@ suite_run() {
 
 	# 3. a wrong checksum is refused with no binary and no temp file
 	setup_root "$root"
-	PROSE_RELEASE_BASE="file://$bad_release" run "$root"
+	run "PROSE_RELEASE_BASE=file://$bad_release" "$root"
 	check "wrong checksum exits non-zero" [ "$rc" -ne 0 ]
 	check "wrong checksum message names the mismatch (got: $out)" contains "$out" "checksum mismatch"
 	check "wrong checksum message is one line" [ "$(lines "$out")" -eq 1 ]
@@ -251,7 +276,7 @@ suite_run() {
 	run "$root"
 	touch -t 200001010000 "$bin/prose-check"
 	before=$(mtime_text "$bin/prose-check")
-	PROSE_RELEASE_BASE="file://$work/nowhere" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/nowhere" "$root"
 	check "matching binary: exit 0 with no release reachable (got $rc: $out)" [ "$rc" -eq 0 ]
 	check "matching binary: mtime unchanged" [ "$(mtime_text "$bin/prose-check")" = "$before" ]
 	check "matching binary: says it is kept (got: $out)" contains "$out" "already installed"
@@ -274,7 +299,7 @@ suite_run() {
 	mkdir -p "$bin"
 	cp "$release/v0.1.0/prose-check-linux-x86_64" "$bin/prose-check"
 	chmod 644 "$bin/prose-check"
-	FAKE_OS=Linux FAKE_ARCH=x86_64 run "$root"
+	run "FAKE_OS=Linux" "FAKE_ARCH=x86_64" "$root"
 	check "not executable: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
 	check "not executable: reinstalled and executable" [ -x "$bin/prose-check" ]
 
@@ -295,7 +320,7 @@ suite_run() {
 
 	# 7. a missing release names the URL, and leaves nothing
 	setup_root "$root"
-	PROSE_RELEASE_BASE="file://$work/nowhere" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/nowhere" "$root"
 	check "missing release exits non-zero" [ "$rc" -ne 0 ]
 	check "missing release names the URL (got: $out)" contains "$out" "file://$work/nowhere/v0.1.0/SHA256SUMS"
 	check "missing release message is one line" [ "$(lines "$out")" -eq 1 ]
@@ -305,7 +330,7 @@ suite_run() {
 	setup_root "$root"
 	mkdir -p "$work/half/v0.1.0"
 	cp "$release/v0.1.0/SHA256SUMS" "$work/half/v0.1.0/"
-	PROSE_RELEASE_BASE="file://$work/half" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/half" "$root"
 	check "missing asset exits non-zero" [ "$rc" -ne 0 ]
 	check "missing asset names its URL (got: $out)" contains "$out" "file://$work/half/v0.1.0/prose-check-linux-x86_64"
 	check "missing asset leaves bin/ empty" bin_empty "$bin"
@@ -315,7 +340,7 @@ suite_run() {
 	mkdir -p "$work/noentry/v0.1.0"
 	cp "$release/v0.1.0"/prose-check-* "$work/noentry/v0.1.0/"
 	grep -v 'linux-x86_64' "$release/v0.1.0/SHA256SUMS" >"$work/noentry/v0.1.0/SHA256SUMS"
-	PROSE_RELEASE_BASE="file://$work/noentry" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/noentry" "$root"
 	check "no checksum line: exit non-zero" [ "$rc" -ne 0 ]
 	check "no checksum line: names SHA256SUMS (got: $out)" contains "$out" "SHA256SUMS"
 	check "no checksum line: one line" [ "$(lines "$out")" -eq 1 ]
@@ -325,7 +350,7 @@ suite_run() {
 	mkdir -p "$work/malformed/v0.1.0"
 	cp "$release/v0.1.0"/prose-check-* "$work/malformed/v0.1.0/"
 	echo 'nothex  prose-check-linux-x86_64' >"$work/malformed/v0.1.0/SHA256SUMS"
-	PROSE_RELEASE_BASE="file://$work/malformed" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/malformed" "$root"
 	check "malformed checksum: exit non-zero" [ "$rc" -ne 0 ]
 	check "malformed checksum: bin/ empty" bin_empty "$bin"
 
@@ -334,7 +359,7 @@ suite_run() {
 	mkdir -p "$work/crlf/v0.1.0"
 	cp "$release/v0.1.0"/prose-check-* "$work/crlf/v0.1.0/"
 	sed 's/  / */; s/$/\r/' "$release/v0.1.0/SHA256SUMS" >"$work/crlf/v0.1.0/SHA256SUMS"
-	PROSE_RELEASE_BASE="file://$work/crlf" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/crlf" "$root"
 	check "CRLF and binary-mark SHA256SUMS: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
 
 	# an empty asset does not pass as a binary
@@ -342,7 +367,7 @@ suite_run() {
 	mkdir -p "$work/empty/v0.1.0"
 	cp "$release/v0.1.0/SHA256SUMS" "$work/empty/v0.1.0/"
 	: >"$work/empty/v0.1.0/prose-check-linux-x86_64"
-	PROSE_RELEASE_BASE="file://$work/empty" run "$root"
+	run "PROSE_RELEASE_BASE=file://$work/empty" "$root"
 	check "empty asset: exit non-zero" [ "$rc" -ne 0 ]
 	check "empty asset: bin/ empty" bin_empty "$bin"
 
@@ -365,7 +390,7 @@ EOF
 	setup_root "$root"
 	run_with_path "$root" "$bare:$work/withshasum" # install once
 	setup_root "$root"
-	PROSE_RELEASE_BASE="file://$bad_release" run_with_path "$root" "$bare:$work/withshasum"
+	invoke "$bare:$work/withshasum" "PROSE_RELEASE_BASE=file://$bad_release" "$root"
 	check "shasum fallback: wrong checksum refused" [ "$rc" -ne 0 ]
 	check "shasum fallback: wrong checksum leaves bin/ empty" bin_empty "$bin"
 
@@ -396,14 +421,14 @@ EOF
 	check "no manifest: names PROSE_VERSION (got: $out)" contains "$out" "PROSE_VERSION"
 	check "no manifest: one line" [ "$(lines "$out")" -eq 1 ]
 	check "no manifest: bin/ empty" bin_empty "$bin"
-	PROSE_VERSION=0.1.0 run "$root"
+	run "PROSE_VERSION=0.1.0" "$root"
 	check "no manifest, PROSE_VERSION set: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
 
 	setup_root "$root"
-	PROSE_VERSION=9.9.9 run "$root"
+	run "PROSE_VERSION=9.9.9" "$root"
 	check "PROSE_VERSION beats the manifest: asks for v9.9.9 (got: $out)" contains "$out" "/v9.9.9/"
 	check "PROSE_VERSION beats the manifest: leaves bin/ empty" bin_empty "$bin"
-	PROSE_VERSION='../../etc' run "$root"
+	run 'PROSE_VERSION=../../etc' "$root"
 	check "a version that is not a version is refused" [ "$rc" -ne 0 ]
 	check "a bad version leaves bin/ empty" bin_empty "$bin"
 
