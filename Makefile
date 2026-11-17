@@ -19,6 +19,12 @@ build:
 
 test:
 	odin test tests $(ODIN_FLAGS) $(TEST_DEFINES)
+	sh tests/install_test.sh
+	@if command -v pwsh >/dev/null 2>&1; then \
+		pwsh -NoProfile -File tests/install_test.ps1; \
+	else \
+		echo "install_test.ps1: skipped, pwsh is not on PATH" >&2; \
+	fi
 
 lint:
 	npx --yes markdownlint-cli2 "**/*.md"

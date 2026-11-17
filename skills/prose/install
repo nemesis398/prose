@@ -1,0 +1,149 @@
+#!/bin/sh
+# Install the prose-check release binary for this platform into bin/ beside
+# SKILL.md.
+#
+#   sh install [--force]
+#
+# It reads the version from ../../.claude-plugin/plugin.json (set PROSE_VERSION
+# when the folder was copied out of the plugin), downloads the binary and
+# SHA256SUMS from that version's release, checks one against the other, and
+# only then puts the binary at bin/prose-check. A binary there that already
+# reports this version is kept unless --force is given. A bin/prose-check that
+# is not executable, or whose --version fails or names another version, is
+# replaced.
+#
+# PROSE_RELEASE_BASE replaces https://github.com/nemesis398/prose/releases/download
+# (the tests point it at a file:// folder). Needs curl and sha256sum or shasum.
+# Every refusal is one line on stderr and a non-zero exit, and leaves nothing
+# behind in bin/.
+
+set -eu
+
+prog=install
+fail() {
+	printf '%s: %s\n' "$prog" "$*" >&2
+	exit 1
+}
+
+force=0
+for arg in "$@"; do
+	case $arg in
+	--force) force=1 ;;
+	*)
+		printf '%s: unknown argument: %s (usage: install [--force])\n' "$prog" "$arg" >&2
+		exit 2
+		;;
+	esac
+done
+
+# Where this script lives, whatever the directory the caller is in.
+case $0 in
+*/*) script_dir=${0%/*} ;;
+*) script_dir=. ;;
+esac
+[ -n "$script_dir" ] || script_dir=/
+script_dir=$(cd -- "$script_dir" && pwd -P) || fail "cannot find the folder of this script"
+bin_dir="$script_dir/bin"
+target="$bin_dir/prose-check"
+
+# The version: PROSE_VERSION, else the plugin manifest two folders up.
+manifest="$script_dir/../../.claude-plugin/plugin.json"
+version=${PROSE_VERSION:-}
+if [ -z "$version" ]; then
+	[ -r "$manifest" ] || fail "no version: $manifest is missing, set PROSE_VERSION"
+	version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$manifest" | sed 1q)
+	[ -n "$version" ] || fail "no version in $manifest, set PROSE_VERSION"
+fi
+case $version in
+*[!0-9A-Za-z.+-]* | .* | '') fail "not a version: $version" ;;
+esac
+
+# The platform, and the asset that belongs to it.
+os=$(uname -s)
+arch=$(uname -m)
+case "$os $arch" in
+"Linux x86_64") asset=prose-check-linux-x86_64 ;;
+"Linux aarch64") asset=prose-check-linux-arm64 ;;
+"Darwin arm64") asset=prose-check-macos-arm64 ;;
+*) fail "unsupported platform: $os $arch" ;;
+esac
+
+# A binary that already reports this version stays.
+if [ "$force" -eq 0 ] && [ -f "$target" ] && [ -x "$target" ]; then
+	have=$("$target" --version 2>/dev/null) || have=
+	if [ "$have" = "prose-check $version" ]; then
+		printf 'prose-check %s is already installed at %s\n' "$version" "$target"
+		exit 0
+	fi
+fi
+[ ! -d "$target" ] || fail "$target is a directory, not a file"
+
+# The tools, checked before anything is downloaded.
+command -v curl >/dev/null 2>&1 || fail "curl is needed and was not found"
+if command -v sha256sum >/dev/null 2>&1; then
+	sha_tool=sha256sum
+elif command -v shasum >/dev/null 2>&1; then
+	sha_tool=shasum
+else
+	fail "sha256sum or shasum is needed to check the download, and neither was found"
+fi
+
+sha256_of() { # prints the SHA-256 of the file on stdin's source, as lower-case hex
+	case $sha_tool in
+	sha256sum) sha256sum <"$1" ;;
+	shasum) shasum -a 256 <"$1" ;;
+	esac | awk '{ print tolower($1); exit }'
+}
+
+base=${PROSE_RELEASE_BASE:-https://github.com/nemesis398/prose/releases/download}
+base=${base%/}
+release_url="$base/v$version"
+
+mkdir -p -- "$bin_dir" || fail "cannot create $bin_dir"
+tmp_dir=$(mktemp -d "$bin_dir/.prose-install.XXXXXX") || fail "cannot create a temporary folder in $bin_dir"
+curl_pid=
+cleanup() {
+	if [ -n "$curl_pid" ]; then
+		kill "$curl_pid" 2>/dev/null || :
+	fi
+	rm -rf -- "$tmp_dir"
+}
+trap cleanup EXIT
+# dash and others do not run the EXIT trap when a signal ends the script, so a
+# signal becomes an exit.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+# fetch URL FILE: curl runs in the background and is waited for, so that a
+# signal reaches the trap at once instead of after the download.
+fetch() {
+	curl -fsL --proto '=https,file' --proto-redir '=https' --connect-timeout 20 \
+		-o "$2" "$1" &
+	curl_pid=$!
+	rc=0
+	wait "$curl_pid" || rc=$?
+	curl_pid=
+	[ "$rc" -eq 0 ] || fail "cannot download $1 (curl exit $rc; is there a release v$version?)"
+}
+
+fetch "$release_url/SHA256SUMS" "$tmp_dir/SHA256SUMS"
+fetch "$release_url/$asset" "$tmp_dir/$asset"
+
+# The line for this asset: "<sha256>  <name>", or "<sha256> *<name>", and
+# perhaps with a carriage return from a file written on Windows.
+expected=$(tr -d '\r' <"$tmp_dir/SHA256SUMS" |
+	awk -v n="$asset" '{ f = $2; sub(/^\*/, "", f); if (f == n) { print tolower($1); exit } }')
+[ -n "$expected" ] || fail "no checksum for $asset in $release_url/SHA256SUMS"
+case $expected in
+*[!0-9a-f]*) fail "the checksum for $asset in $release_url/SHA256SUMS is not a SHA-256" ;;
+esac
+[ "${#expected}" -eq 64 ] || fail "the checksum for $asset in $release_url/SHA256SUMS is not a SHA-256"
+
+actual=$(sha256_of "$tmp_dir/$asset") || actual=
+[ "$actual" = "$expected" ] ||
+	fail "checksum mismatch for $release_url/$asset: expected $expected, got ${actual:-nothing}"
+
+chmod 755 "$tmp_dir/$asset"
+mv -f -- "$tmp_dir/$asset" "$target"
+printf 'installed prose-check %s (%s) at %s\n' "$version" "$asset" "$target"
