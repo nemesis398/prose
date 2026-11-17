@@ -37,6 +37,12 @@ curl_init :: proc() {
 	})
 }
 
+// CURLOPT_PROTOCOLS, the bit mask that libcurl before 7.85 knows in place
+// of CURLOPT_PROTOCOLS_STR. Odin's binding left it out as deprecated; libcurl
+// still takes it.
+@(private = "file")
+CURLOPT_PROTOCOLS :: curl.option(curl.OPTTYPE_LONG + 181)
+
 @(private = "file")
 Sink :: struct {
 	ctx:      runtime.Context,
@@ -116,6 +122,15 @@ post_form :: proc(
 	}
 	defer curl.easy_cleanup(h)
 
+	// Only http and https. A libcurl older than 7.85 (EL8's 7.61, Ubuntu
+	// 22.04's 7.81) refuses PROTOCOLS_STR as an unknown option and would
+	// then speak every protocol it has, file: included; it takes the bit
+	// mask instead. A libcurl that takes neither is not used at all.
+	if curl.easy_setopt(h, .PROTOCOLS_STR, cstring("http,https")) != .E_OK &&
+	   curl.easy_setopt(h, CURLOPT_PROTOCOLS, c.long(curl.PROTO_HTTP | curl.PROTO_HTTPS)) != .E_OK {
+		return 0, "", Http_Error{strings.clone("curl cannot be limited to http and https", allocator)}
+	}
+
 	curl_url := strings.clone_to_cstring(url, allocator)
 	defer delete(curl_url, allocator)
 	payload := form_encode(fields, allocator)
@@ -135,7 +150,6 @@ post_form :: proc(
 	errbuf: [curl.ERROR_SIZE]byte
 
 	curl.easy_setopt(h, .URL, curl_url)
-	curl.easy_setopt(h, .PROTOCOLS_STR, cstring("http,https"))
 	curl.easy_setopt(h, .USERAGENT, cstring(USER_AGENT))
 	curl.easy_setopt(h, .HTTPHEADER, headers)
 	curl.easy_setopt(h, .POSTFIELDSIZE_LARGE, curl.off_t(len(payload)))
