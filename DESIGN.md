@@ -144,7 +144,9 @@ no Python, no Nix and no compiler. It keeps the Python checker's interface,
 flags, exit codes, JSON shape and rule names. The port ran against the Python
 checker as its reference: a corpus of documents went through both, offline and
 against recorded LanguageTool answers, and the findings had to be identical.
-The corpus and its expected findings stay as golden tests.
+The corpus and its expected findings stay as golden tests, and the Python
+checker left the tree once the port matched it; `tests/README.md` says how the
+goldens were made and where the reference lives in history.
 
 **The settings live in one file of its own**, `config.json` under
 `$XDG_CONFIG_HOME/prose/`. Claude Code's plugin settings were weighed and

@@ -162,8 +162,8 @@ forced_language_labels_every_block :: proc(t: ^testing.T) {
 	}
 }
 
-// The reference's blocks for every corpus file, dumped by
-// reference/dump_blocks.py into tests/mask/NAME.blocks.json.
+// The reference's blocks for every corpus file, dumped into
+// tests/mask/NAME.blocks.json (see tests/README.md).
 @(test)
 blocks_match_the_reference_on_the_corpus :: proc(t: ^testing.T) {
 	dir := strings.concatenate({#directory, "corpus"})

@@ -258,8 +258,8 @@ suppressed_looks_at_at_least_one_rune :: proc(t: ^testing.T) {
 	testing.expect(t, !prose.suppressed(&m, 100, 1))
 }
 
-// The reference's masking of every corpus file, dumped by
-// reference/dump_mask.py into tests/mask/NAME.json.
+// The reference's masking of every corpus file, dumped into
+// tests/mask/NAME.json (see tests/README.md).
 @(test)
 mask_matches_the_reference_on_the_corpus :: proc(t: ^testing.T) {
 	dir := strings.concatenate({#directory, "corpus"})

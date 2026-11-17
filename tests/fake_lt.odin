@@ -14,9 +14,42 @@ import "core:unicode/utf8"
 
 // A fake LanguageTool: plain HTTP on 127.0.0.1, an ephemeral port, one
 // thread, answering `POST /v2/check` from the recordings in
-// tests/lt-recordings. It is the Odin twin of reference/fake_lt.py, whose
-// docstring defines the recording key; `recording_key` computes it the same
-// way from the decoded form fields.
+// tests/lt-recordings. It is the Odin twin of the Python fake the goldens
+// were recorded with (see tests/README.md).
+//
+// The recording key
+//
+//     key = hex(sha256(language + "\x00" + level + "\x00" + canonical))
+//
+// with the three parts taken from the form body of the POST
+// (`application/x-www-form-urlencoded`, UTF-8, decoded as usual):
+//
+//   language   the form field `language`, as sent (`de-DE` or `en-US`).
+//   level      the form field `level`: `picky` or `default`. When the field
+//              is absent, as in the probe, the level is `default`.
+//   canonical  the annotation items joined with "\x01" (U+0001), no
+//              separator at the end. They come from one of two fields:
+//              `data`, a JSON document {"annotation": [ITEM, ...]}, where an
+//              ITEM has either a `text` string, which becomes "t:" + text, or
+//              a `markup` string and possibly an `interpretAs` string, which
+//              becomes "m:" + markup + "\x02" + interpretAs (empty when the
+//              item has none). The JSON is decoded first, so its escaping
+//              does not matter. Or `text`, used only without a `data` field,
+//              which is one text item: "t:" + text.
+//
+// All strings are UTF-8 when hashed. `username`, `apiKey` and
+// `disabledRules` take no part in the key: the first two must never reach a
+// recording, the last is constant.
+//
+// The probe, `text=This are a test.&language=en-US`, has no level and no
+// `data`, so its canonical string is "t:This are a test." and its key is
+//
+//     b042188f04f4c99d9ca1a03db109d6b18a97ebcdab95bc68243fb9622adfb8d8
+//
+// `tests/lt-recordings/<key>.json` holds LanguageTool's response body byte
+// for byte; the fake sends it back with status 200 and `Content-Type:
+// application/json`. A key without a file answers 404 with `no recording for
+// key <key>` as the body, any other path 404, and a GET on `/v2/check` 405.
 //
 // Each test starts its own fake with `fake_lt_start` and ends it with
 // `fake_lt_stop`, which joins the thread and frees everything. Odin has no
@@ -373,7 +406,7 @@ form_decode :: proc(s: string) -> string {
 }
 
 // canonical_items joins the annotation items of a request as
-// reference/fake_lt.py's docstring says: "t:" + text, or "m:" + markup +
+// the key's description at the top of this file says: "t:" + text, or "m:" + markup +
 // "\x02" + interpretAs, joined with "\x01"; from the JSON in `data`, or, without
 // it, the one text item of `text`. Allocated; free with `delete`. False when
 // `data` is not a JSON object whose `annotation` is a list of objects.

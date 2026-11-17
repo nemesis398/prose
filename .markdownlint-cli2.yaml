@@ -5,8 +5,7 @@ config:
   MD041: false
 ignores:
   - "evals/results/**"
-  # The corpus and the reference fixture are bad Markdown on purpose.
+  # The corpus is bad Markdown on purpose.
   - "tests/**"
-  - "reference/fixture.md"
   # Working notes of the build, never committed.
   - ".superpowers/**"

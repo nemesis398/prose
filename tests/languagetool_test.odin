@@ -39,7 +39,7 @@ the_fake_keys_the_probe_like_the_reference :: proc(t: ^testing.T) {
 
 // A request with `data`, as Python's urlencode and json.dumps sent it:
 // text and markup items, with and without interpretAs. The canonical string
-// and the key are reference/fake_lt.py's for the same body.
+// and the key are the reference fake's for the same body.
 @(test)
 the_fake_keys_a_data_request_like_the_reference :: proc(t: ^testing.T) {
 	body := "data=%7B%22annotation%22%3A+%5B%7B%22text%22%3A+%22Ein+%5C%22Test%5C%22.%5Cn%22%7D%2C+%7B%22markup%22%3A+%22%60x%60%22%2C+%22interpretAs%22%3A+%22x%22%7D%2C+%7B%22markup%22%3A+%22%5B%5Ba%5D%5D%22%7D%5D%7D&language=de-DE&level=picky"

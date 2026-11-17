@@ -11,7 +11,7 @@ TEST_DEFINES := -define:ODIN_TEST_RANDOM_SEED=1 \
 	-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true \
 	-define:ODIN_TEST_FANCY=false
 
-.PHONY: build test test-odin test-install test-install-ps1 lint doccheck reference-test
+.PHONY: build test test-odin test-install test-install-ps1 lint doccheck
 
 build:
 	mkdir -p skills/prose/bin
@@ -43,10 +43,3 @@ DOCS := README.md skills/prose/SKILL.md skills/prose/references/*.md DESIGN.md c
 
 doccheck:
 	skills/prose/bin/prose-check --no-lt $(DOCS)
-
-# The reference checker against its own fixture, with no settings and no
-# skill values on the machine.
-reference-test:
-	@dir=$$(mktemp -d); \
-	RAVNIX_SKILL_VALUES=/nonexistent XDG_CONFIG_HOME=$$dir PYTHONDONTWRITEBYTECODE=1 python3 -B reference/run_tests.py; \
-	status=$$?; rm -rf "$$dir"; exit $$status
