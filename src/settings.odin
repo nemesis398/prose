@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:slice"
 import "core:strings"
+import "core:sync"
 import "core:thread"
 import "core:time"
 
@@ -741,23 +742,31 @@ command_output :: proc(
 }
 
 // Who feeds a child's stdin, and what: the writer thread's work order.
+// `stop` is set by the reader, with `sync.atomic_store`, when the writer must
+// give up.
 @(private = "file")
 Stdin_Feed :: struct {
 	w:    ^os.File,
 	data: []byte,
+	stop: bool,
 }
 
 // feed_stdin writes all of the order's data into the pipe and closes it, so
-// the child sees the end of its input. It stops at the first write error,
-// which is the child having gone away. It owns `w` and closes it.
+// the child sees the end of its input. The pipe is non-blocking and a full
+// pipe is retried every millisecond, so the writer never sits in a write
+// that nothing will end: it stops at the first write error (the child has
+// gone away) and when `stop` is set. It owns `w` and closes it.
 @(private = "file")
 feed_stdin :: proc(t: ^thread.Thread) {
 	feed := (^Stdin_Feed)(t.data)
 	data := feed.data
-	for len(data) > 0 {
-		n, err := os.write(feed.w, data)
-		if err != nil || n <= 0 {
+	for len(data) > 0 && !sync.atomic_load(&feed.stop) {
+		n, res := write_some(feed.w, data)
+		if res == .Gone {
 			break
+		}
+		if res == .Full {
+			time.sleep(time.Millisecond)
 		}
 		data = data[n:]
 	}
@@ -776,9 +785,11 @@ feed_stdin :: proc(t: ^thread.Thread) {
 // The input goes in from a thread of its own while this one reads the
 // output with a deadline, because a command that answers as it reads, as
 // hunspell does, blocks on a full output pipe while we block on a full input
-// pipe if one thread does both. When the command ends early the writer's
-// write fails with a broken pipe, and when it is killed so does a write that
-// is blocked.
+// pipe if one thread does both. The writer ends when the command ends early
+// (its write fails with a broken pipe), when it has written everything, and
+// otherwise when this procedure tells it to stop, which it does before it
+// returns. That last is what bounds the run when the command is a wrapper
+// whose own child holds the pipes: killing the wrapper breaks nothing.
 command_with_input :: proc(
 	command: []string,
 	input: []byte,
@@ -799,10 +810,6 @@ command_with_input :: proc(
 		_ = os.close(in_w)
 		return nil, false
 	}
-	defer {
-		_ = os.close(out_r)
-	}
-
 	ignore_sigpipe()
 	proc_, serr := os.process_start(os.Process_Desc{command = command, stdin = in_r, stdout = out_w})
 	// The parent's copies of the child's ends; with them open neither pipe
@@ -811,22 +818,32 @@ command_with_input :: proc(
 	_ = os.close(out_w)
 	if serr != nil {
 		_ = os.close(in_w)
+		_ = os.close(out_r)
 		return nil, false
 	}
 
-	feed := Stdin_Feed{in_w, input}
+	set_nonblocking(in_w)
+	feed := Stdin_Feed {
+		w    = in_w,
+		data = input,
+	}
 	writer := thread.create(feed_stdin)
 	writer.data = &feed
 	writer.init_context = context
 	thread.start(writer)
 	done := false
 	defer {
-		// Whatever happened, the child is gone or about to be, so the writer
-		// ends: its write breaks, or it has finished.
+		// Whatever happened, end the writer before the join. Killing the child
+		// does not do it: a wrapper script's own child may hold the read end
+		// of the pipe, so the pipe never breaks, and the writer is told to stop
+		// instead. The output pipe closes first so a child blocked on it can
+		// go.
 		if !done {
 			_ = os.process_kill(proc_)
 			_, _ = os.process_wait(proc_, time.Second)
 		}
+		sync.atomic_store(&feed.stop, true)
+		_ = os.close(out_r)
 		thread.join(writer)
 		thread.destroy(writer)
 	}

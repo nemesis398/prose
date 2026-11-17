@@ -1,0 +1,6 @@
+#!/bin/sh
+# A wrapper that exits at once and leaves its child behind, still holding the
+# stdin and stdout pipes. The checker sees the wrapper exit with no output and
+# must not wait for the child.
+sleep 10 <&0 >&1 &
+exit 0

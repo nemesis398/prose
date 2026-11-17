@@ -1,0 +1,6 @@
+#!/bin/sh
+# A wrapper script that does not `exec` the program it wraps, as a user's
+# PROSE_HUNSPELL may. The program, here `sleep`, is a child that holds the
+# stdin and stdout pipes and never reads or writes them. Killing this shell
+# does not end it, so the checker must not depend on the pipes breaking.
+sleep 10

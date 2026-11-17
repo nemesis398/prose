@@ -170,6 +170,33 @@ a_hunspell_that_dies_at_once_gives_nothing_and_does_not_crash_us :: proc(t: ^tes
 	testing.expect_value(t, len(found), 0)
 }
 
+// A wrapper that does not `exec` leaves a child that holds the pipes after
+// the wrapper is killed. The run is still bounded by the timeout, with input
+// far past a pipe buffer so the writer is blocked when the time is up.
+@(test)
+a_wrapper_whose_child_holds_the_pipes_is_still_bounded :: proc(t: ^testing.T) {
+	text := strings.repeat("The colr is red and the sky is blue.\n", 110_000)
+	defer delete(text)
+	start := time.now()
+	found := hunspell_findings(text, "en", #directory + "stub/hunspell-wrapper", nil, 300 * time.Millisecond)
+	defer prose.findings_destroy(found)
+	testing.expect_value(t, len(found), 0)
+	testing.expectf(t, time.since(start) < 5 * time.Second, "took %v", time.since(start))
+}
+
+// The wrapper exits and its child lives on holding the stdin pipe: the
+// checker sees the end and does not wait on the writer for the child.
+@(test)
+a_wrapper_that_exits_and_leaves_a_child_is_not_waited_for :: proc(t: ^testing.T) {
+	text := strings.repeat("The colr is red and the sky is blue.\n", 110_000)
+	defer delete(text)
+	start := time.now()
+	found := hunspell_findings(text, "en", #directory + "stub/hunspell-orphan", nil, 30 * time.Second)
+	defer prose.findings_destroy(found)
+	testing.expect_value(t, len(found), 0)
+	testing.expectf(t, time.since(start) < 5 * time.Second, "took %v", time.since(start))
+}
+
 @(test)
 a_long_text_does_not_deadlock_on_the_pipes :: proc(t: ^testing.T) {
 	// Input and output both pass a pipe buffer many times over. Each line is
