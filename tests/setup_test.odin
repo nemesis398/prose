@@ -680,7 +680,7 @@ setup_asks_and_writes_premium :: proc(t: ^testing.T) {
 	defer delete(cred)
 	// The line after the rule is what a user must never type here: nothing
 	// reads it, and nothing prints it.
-	c := ask(dir, "premium\nsomeone@example.org\n\nSECRET-KEY\n")
+	c := ask(dir, "premium\nsomeone@example.org\nvault-item\n\nSECRET-KEY\n")
 	defer tty_done(&c)
 	testing.expect_value(t, c.code, 0)
 	testing.expect_value(t, c.err, "")
@@ -702,6 +702,7 @@ setup_asks_and_writes_premium :: proc(t: ^testing.T) {
 	testing.expect_value(t, err.problem, "")
 	testing.expect_value(t, s.backend, prose.Backend_Kind.Premium)
 	testing.expect_value(t, s.username, "someone@example.org")
+	testing.expect_value(t, s.key_item, "vault-item")
 	testing.expect_value(t, s.language_rule, "")
 	testing.expect_value(t, s.server, "")
 	got := read(path)
@@ -760,7 +761,7 @@ setup_asks_again_after_an_answer_it_does_not_know :: proc(t: ^testing.T) {
 }
 
 @(test)
-setup_with_empty_answers_chooses_none_or_keeps_the_stored_backend :: proc(t: ^testing.T) {
+setup_with_empty_answers_chooses_none_or_keeps_what_is_stored :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
 	path := join(dir, "config.json")
@@ -769,13 +770,20 @@ setup_with_empty_answers_chooses_none_or_keeps_the_stored_backend :: proc(t: ^te
 	defer tty_done(&c)
 	testing.expect_value(t, c.code, 0)
 	expect_file(t, path, "{\n  \"languagetool\": {\n    \"backend\": \"none\"\n  }\n}\n")
-	put(t, path, `{"languagetool": {"backend": "premium", "username": "u"}, "languageRule": "old"}`)
-	c2 := ask(dir, "\n\n\n")
+	put(t, path, `{"languagetool": {"backend": "premium", "username": "u", "keyItem": "k"}, "languageRule": "old"}`)
+	c2 := ask(dir, "\n\n\n\n")
 	defer tty_done(&c2)
 	testing.expect_value(t, c2.code, 0)
-	// An empty rule means no rule; the empty user name keeps the stored one.
-	expect_file(t, path, "{\n  \"languagetool\": {\n    \"backend\": \"premium\",\n    \"username\": \"u\"\n  }\n}\n")
+	// Every empty answer keeps what is stored, the rule too.
+	want := "{\n  \"languageRule\": \"old\",\n  \"languagetool\": {\n    \"backend\": \"premium\",\n    \"username\": \"u\",\n    \"keyItem\": \"k\"\n  }\n}\n"
+	expect_file(t, path, want)
 	expect_contains(t, c2.out, "old")
+	expect_contains(t, c2.out, "empty keeps")
+	// A single dash clears the rule and the item.
+	c3 := ask(dir, "\n\n-\n-\n")
+	defer tty_done(&c3)
+	testing.expect_value(t, c3.code, 0)
+	expect_file(t, path, "{\n  \"languagetool\": {\n    \"backend\": \"premium\",\n    \"username\": \"u\"\n  }\n}\n")
 }
 
 @(test)
@@ -835,4 +843,150 @@ run_setup_tty_takes_a_reader_and_a_writer :: proc(t: ^testing.T) {
 	code2 := prose.run_setup_tty(strings.to_reader(&r2, text), strings.to_writer(&out2), strings.to_writer(&err2), path)
 	testing.expect_value(t, code2, 2)
 	expect_contains(t, strings.to_string(err2), "too long")
+}
+
+@(test)
+setup_repairs_a_stored_value_that_fails_validation :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	put(t, path, `{"languageRule": "keep", "languagetool": {"backend": "premuim"}}`)
+	c := ask(dir, "public\n\n")
+	defer tty_done(&c)
+	testing.expect_value(t, c.code, 0)
+	expect_file(t, path, "{\n  \"languageRule\": \"keep\",\n  \"languagetool\": {\n    \"backend\": \"public\"\n  }\n}\n")
+}
+
+@(test)
+values_stdin_repairs_a_stored_typo :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	put(t, path, `{"languagetool": {"backend": "premuim"}, "ignoreWords": ["x"]}`)
+	c := values(dir, `{"languagetool": {"backend": "premium", "username": "u"}}`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 0)
+	expect_file(
+		t,
+		path,
+		"{\n  \"ignoreWords\": [\n    \"x\"\n  ],\n  \"languagetool\": {\n    \"backend\": \"premium\",\n    \"username\": \"u\"\n  }\n}\n",
+	)
+}
+
+// ---- a settings file that is a link ----
+
+@(test)
+a_linked_settings_file_stays_a_link :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		store := join(dir, "store")
+		defer delete(store)
+		cfg := join(dir, "cfg")
+		defer delete(cfg)
+		testing.expect(t, os.make_directory(store) == nil)
+		testing.expect(t, os.make_directory(cfg) == nil)
+		target := join(store, "real.json")
+		defer delete(target)
+		mid := join(store, "mid.json")
+		defer delete(mid)
+		link := join(cfg, "config.json")
+		defer delete(link)
+		put(t, target, `{"languageRule": "keep"}`)
+		// A chain: cfg/config.json -> (absolute) store/mid.json -> (relative) real.json
+		testing.expect(t, os.symlink("real.json", mid) == nil)
+		testing.expect(t, os.symlink(mid, link) == nil)
+		c := values(cfg, `{"languagetool": {"backend": "public"}}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 0)
+		info, err := os.lstat(link, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.type, os.File_Type.Symlink)
+		minfo, merr := os.lstat(mid, context.allocator)
+		defer os.file_info_delete(minfo, context.allocator)
+		testing.expect(t, merr == nil)
+		testing.expect_value(t, minfo.type, os.File_Type.Symlink)
+		expect_file(
+			t,
+			target,
+			"{\n  \"languageRule\": \"keep\",\n  \"languagetool\": {\n    \"backend\": \"public\"\n  }\n}\n",
+		)
+		listing := names(store)
+		defer delete(listing)
+		testing.expect_value(t, listing, "mid.json real.json")
+		// A relative link in the config directory itself.
+		rel := join(cfg, "other.json")
+		defer delete(rel)
+		testing.expect(t, os.symlink("../store/real.json", rel) == nil)
+		err2 := prose.apply_values(rel, `{"ignoreWords": ["w"]}`)
+		defer prose.settings_error_destroy(&err2)
+		testing.expect_value(t, err2.problem, "")
+		got := read(target)
+		defer delete(got)
+		expect_contains(t, got, `"w"`)
+		expect_contains(t, got, `"languageRule"`)
+	}
+}
+
+@(test)
+a_link_into_a_read_only_directory_fails_cleanly :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		store := join(dir, "store")
+		defer delete(store)
+		cfg := join(dir, "cfg")
+		defer delete(cfg)
+		testing.expect(t, os.make_directory(store) == nil)
+		testing.expect(t, os.make_directory(cfg) == nil)
+		target := join(store, "real.json")
+		defer delete(target)
+		link := join(cfg, "config.json")
+		defer delete(link)
+		put(t, target, `{"languageRule": "keep"}`)
+		testing.expect(t, os.symlink(target, link) == nil)
+		testing.expect(t, os.change_mode(store, os.perm_number(0o500)) == nil)
+		defer _ = os.change_mode(store, os.perm_number(0o700))
+		probe := join(store, "probe")
+		defer delete(probe)
+		if os.write_entire_file_from_string(probe, "x") == nil {
+			_ = os.remove(probe)
+			return
+		}
+		c := values(cfg, `{"languageRule": "new"}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 2)
+		expect_contains(t, c.err, "cannot write")
+		expect_contains(t, c.err, target)
+		expect_file(t, target, `{"languageRule": "keep"}`)
+		info, err := os.lstat(link, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.type, os.File_Type.Symlink)
+		listing := names(cfg)
+		defer delete(listing)
+		testing.expect_value(t, listing, "config.json")
+	}
+}
+
+@(test)
+a_link_loop_is_refused :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		link := join(dir, "config.json")
+		defer delete(link)
+		testing.expect(t, os.symlink("config.json", link) == nil)
+		c := values(dir, `{"languageRule": "R"}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 2)
+		expect_contains(t, c.err, "too many links")
+		info, err := os.lstat(link, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.type, os.File_Type.Symlink)
+	}
 }

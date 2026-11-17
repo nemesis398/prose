@@ -121,27 +121,20 @@ apply_object :: proc(path: string, values: ^json.Object, allocator: runtime.Allo
 	if path == "" {
 		return setup_fail(path, allocator, "no config directory: set XDG_CONFIG_HOME or HOME")
 	}
-	// The stored file must be usable before it is rewritten.
-	stored_settings, lerr := load_settings(path, allocator)
-	settings_destroy(&stored_settings, allocator)
-	if lerr.problem != "" {
-		return lerr
+	// A link is followed, so that the file it points to is the one written
+	// and the link stays what it is.
+	target, lproblem := resolve_link(path, allocator)
+	defer delete(target, allocator)
+	if lproblem != "" {
+		return setup_fail(path, allocator, "%s: %s", path, lproblem)
 	}
-	stored_value: json.Value
+	// Merging needs the stored file to be a JSON object; whether the merged
+	// result is usable is for the check on the temporary file to say, so a
+	// file that fails validation can be repaired from here.
+	stored_value, serr := read_stored(target, path, allocator)
 	defer json.destroy_value(stored_value, allocator)
-	data, rerr := os.read_entire_file(path, allocator)
-	defer delete(data, allocator)
-	switch {
-	case rerr == nil:
-		parsed, problem := parse_object(string(data), allocator)
-		stored_value = parsed
-		if problem != "" {
-			return setup_fail(path, allocator, "%s: is %s", path, problem)
-		}
-	case rerr == .Not_Exist:
-		stored_value = make(json.Object, allocator)
-	case:
-		return setup_fail(path, allocator, "%s: cannot be read (%s)", path, os.error_string(rerr))
+	if serr.problem != "" {
+		return serr
 	}
 	stored := &stored_value.(json.Object)
 
@@ -156,7 +149,83 @@ apply_object :: proc(path: string, values: ^json.Object, allocator: runtime.Allo
 	defer strings.builder_destroy(&b)
 	emit_object(&b, stored^, 0, TOP_ORDER[:], true)
 	strings.write_byte(&b, '\n')
-	return write_checked(path, strings.to_string(b), allocator)
+	return write_checked(path, target, strings.to_string(b), allocator)
+}
+
+// How many links a settings file may lead through.
+@(private = "file")
+MAX_LINKS :: 8
+
+// resolve_link follows `path` through symbolic links (relative ones from the
+// directory of the link) to the file that holds the settings. A path that is
+// no link, or does not exist, comes back as it is. The problem is "" or
+// states why the end cannot be found. Allocated with `allocator`.
+@(private = "file")
+resolve_link :: proc(path: string, allocator: runtime.Allocator) -> (target: string, problem: string) {
+	cur := strings.clone(path, allocator)
+	for i in 0 ..= MAX_LINKS {
+		info, err := os.lstat(cur, allocator)
+		if err != nil {
+			return cur, ""
+		}
+		is_link := info.type == .Symlink
+		os.file_info_delete(info, allocator)
+		if !is_link {
+			return cur, ""
+		}
+		if i == MAX_LINKS {
+			break
+		}
+		dest, rerr := os.read_link(cur, allocator)
+		if rerr != nil {
+			delete(cur, allocator)
+			return "", fmt.tprintf("cannot follow the link (%s)", os.error_string(rerr))
+		}
+		if os.is_absolute_path(dest) {
+			delete(cur, allocator)
+			cur = dest
+		} else {
+			dir, _ := os.split_path(cur)
+			joined, _ := os.join_path({dir, dest}, allocator)
+			delete(dest, allocator)
+			delete(cur, allocator)
+			cur = joined
+		}
+	}
+	delete(cur, allocator)
+	return "", fmt.tprintf("leads through too many links (more than %d)", MAX_LINKS)
+}
+
+// read_stored reads the settings file at `target` as a JSON object. A file
+// that is not there is an empty object. `path` is the name to use in a
+// problem. The value is to be freed in every case.
+@(private = "file")
+read_stored :: proc(target, path: string, allocator: runtime.Allocator) -> (value: json.Value, err: Settings_Error) {
+	info, serr := os.stat(target, allocator)
+	if serr == .Not_Exist {
+		return make(json.Object, allocator), {}
+	}
+	if serr != nil {
+		return nil, setup_fail(path, allocator, "%s: cannot be read (%s)", path, os.error_string(serr))
+	}
+	size, regular := info.size, info.type == .Regular
+	os.file_info_delete(info, allocator)
+	if !regular {
+		return nil, setup_fail(path, allocator, "%s: is not a regular file", path)
+	}
+	if size > MAX_SETTINGS_BYTES {
+		return nil, setup_fail(path, allocator, "%s: is too big for a settings file (%d bytes)", path, size)
+	}
+	data, rerr := os.read_entire_file(target, allocator)
+	defer delete(data, allocator)
+	if rerr != nil {
+		return nil, setup_fail(path, allocator, "%s: cannot be read (%s)", path, os.error_string(rerr))
+	}
+	parsed, problem := parse_object(string(data), allocator)
+	if problem != "" {
+		return parsed, setup_fail(path, allocator, "%s: is %s", path, problem)
+	}
+	return parsed, {}
 }
 
 // delete_entry removes `key` from `obj`, freeing the key and its value.
@@ -326,8 +395,8 @@ write_json_string :: proc(b: ^strings.Builder, s: string) {
 // and replaces `path` only when `load_settings` accepts what was written.
 // Creates the directory (mode 0700) when it is missing.
 @(private = "file")
-write_checked :: proc(path, text: string, allocator: runtime.Allocator) -> Settings_Error {
-	dir, _ := os.split_path(path)
+write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) -> Settings_Error {
+	dir, _ := os.split_path(target)
 	created := false
 	if dir != "" && !os.exists(dir) {
 		parent, _ := os.split_path(dir)
@@ -335,7 +404,7 @@ write_checked :: proc(path, text: string, allocator: runtime.Allocator) -> Setti
 			_ = os.make_directory_all(parent)
 		}
 		if merr := os.make_directory(dir, os.perm_number(0o700)); merr != nil && merr != .Exist {
-			return setup_fail(path, allocator, "%s: the directory cannot be made (%s)", path, os.error_string(merr))
+			return setup_fail(path, allocator, "cannot write %s: the directory cannot be made (%s)", target, os.error_string(merr))
 		}
 		created = true
 	}
@@ -348,7 +417,7 @@ write_checked :: proc(path, text: string, allocator: runtime.Allocator) -> Setti
 
 	file, tmp, cerr := create_temp(dir, allocator)
 	if cerr != nil {
-		return setup_fail(path, allocator, "%s: cannot write the settings (%s)", path, os.error_string(cerr))
+		return setup_fail(path, allocator, "cannot write %s (%s)", target, os.error_string(cerr))
 	}
 	defer delete(tmp, allocator)
 	n, werr := os.write(file, transmute([]byte)text)
@@ -364,7 +433,7 @@ write_checked :: proc(path, text: string, allocator: runtime.Allocator) -> Setti
 	}
 	if werr != nil {
 		_ = os.remove(tmp)
-		return setup_fail(path, allocator, "%s: cannot write the settings (%s)", path, os.error_string(werr))
+		return setup_fail(path, allocator, "cannot write %s (%s)", target, os.error_string(werr))
 	}
 
 	checked, verr := load_settings(tmp, allocator)
@@ -375,9 +444,9 @@ write_checked :: proc(path, text: string, allocator: runtime.Allocator) -> Setti
 		what := strings.trim_prefix(verr.problem, strings.concatenate({tmp, ": "}, context.temp_allocator))
 		return setup_fail(path, allocator, "%s: %s", path, what)
 	}
-	if rerr := os.rename(tmp, path); rerr != nil {
+	if rerr := os.rename(tmp, target); rerr != nil {
 		_ = os.remove(tmp)
-		return setup_fail(path, allocator, "%s: cannot replace the settings (%s)", path, os.error_string(rerr))
+		return setup_fail(path, allocator, "cannot write %s: cannot replace it (%s)", target, os.error_string(rerr))
 	}
 	failed = false
 	return {}
@@ -455,17 +524,31 @@ ask :: proc(r: ^bufio.Reader, w: io.Writer, prompt: string, allocator: runtime.A
 // run_setup_tty asks the questions of `--setup` on `stdin` and `stdout`
 // and writes the settings file at `path`: the backend (naming where each one
 // sends the text), then the server URL or the Premium user name, then the
-// language rule. An empty answer keeps the stored backend (else `none`) and
-// the stored URL or user name; an empty rule means no rule and drops a
-// stored one. For Premium it says where the key goes and never asks for it.
+// rbw item name (Premium) and the language rule. An empty answer keeps what is
+// stored (the backend: else `none`); a single `-` clears the rbw item or the
+// rule. For Premium it says where the key goes and never asks for the key.
 // Problems go to `stderr`. Returns the exit code: 0 written, 2 not.
 run_setup_tty :: proc(stdin: io.Reader, stdout, stderr: io.Writer, path: string, allocator := context.allocator) -> int {
 	stored, lerr := load_settings(path, allocator)
 	defer settings_destroy(&stored, allocator)
 	defer settings_error_destroy(&lerr, allocator)
 	if lerr.problem != "" {
-		fmt.wprintf(stderr, "prose: %s\nprose: the settings file is unchanged\n", lerr.problem)
-		return 2
+		// A stored value that fails validation is what setup is there to
+		// repair: ask with the defaults, and let the check on the new file
+		// decide. Only a file that is no JSON object stops the questions.
+		target, lproblem := resolve_link(path, allocator)
+		defer delete(target, allocator)
+		stored_json, serr := read_stored(target, path, allocator)
+		json.destroy_value(stored_json, allocator)
+		defer settings_error_destroy(&serr, allocator)
+		if lproblem != "" {
+			fmt.wprintf(stderr, "prose: %s: %s\nprose: the settings file is unchanged\n", path, lproblem)
+			return 2
+		}
+		if serr.problem != "" {
+			fmt.wprintf(stderr, "prose: %s\nprose: the settings file is unchanged\n", serr.problem)
+			return 2
+		}
 	}
 
 	buf := make([]byte, MAX_ANSWER_BYTES, allocator)
@@ -580,21 +663,41 @@ run_setup_tty :: proc(stdin: io.Reader, stdout, stderr: io.Writer, path: string,
 		} else {
 			set(&lt, "username", json.String(answer), allocator)
 		}
+		// The rbw item that holds the key: its name, never the key.
+		now_item := stored.key_item
+		item_prompt := fmt.tprintf("rbw item name for the key, empty keeps, - clears [%s]: ", now_item) if now_item != "" else "rbw item name for the key, empty for none: "
+		item_answer, item_got := ask(&reader, stdout, item_prompt, allocator)
+		if item_got != .Ok {
+			json.destroy_value(lt, allocator)
+			return problem(stderr, item_got)
+		}
+		switch item_answer {
+		case "":
+			delete(item_answer, allocator)
+		case "-":
+			delete(item_answer, allocator)
+			set(&lt, "keyItem", json.Null{}, allocator)
+		case:
+			set(&lt, "keyItem", json.String(item_answer), allocator)
+		}
 	}
 
 	prompt := `Language rule, empty for none: `
 	if r := strings.trim_space(stored.language_rule); r != "" {
-		prompt = fmt.tprintf("Language rule, empty for none [now: %s]: ", r)
+		prompt = fmt.tprintf("Language rule, empty keeps, - clears [now: %s]: ", r)
 	}
 	rule, got := ask(&reader, stdout, prompt, allocator)
 	if got != .Ok {
 		json.destroy_value(lt, allocator)
 		return problem(stderr, got)
 	}
-	if rule == "" {
+	switch rule {
+	case "":
+		delete(rule, allocator)
+	case "-":
 		delete(rule, allocator)
 		set(&values, "languageRule", json.Null{}, allocator)
-	} else {
+	case:
 		set(&values, "languageRule", json.String(rule), allocator)
 	}
 	set(&values, "languagetool", lt, allocator)
