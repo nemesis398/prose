@@ -896,9 +896,9 @@ rule_phrasing :: proc(r: ^Rules) {
 					p += 1
 					continue
 				}
-				// Python's lower() can lengthen the text, so a position may
-				// lie past the source's end, where the reference would
-				// raise IndexError. It is skipped here.
+				// `lowered` is as long as the source, so `p < n` always
+				// holds; it stays as a guard. The reference's lowered text
+				// could be longer and raised IndexError here.
 				if p < n && !r.m.is_markup[p] && lang_at(r, p) == set.lang {
 					if old, ok := hits[p]; !ok || length > old.length {
 						hits[p] = Hit{length, ph.why}
@@ -953,11 +953,13 @@ rule_phrasing :: proc(r: ^Rules) {
 }
 
 // py_lower lowercases `src` as far as Python's `str.lower()` matters to the
-// phrase lists: ASCII and the German capitals, the capital sharp s, the
-// Kelvin sign (which lowers to "k"), and the dotted capital I, which lowers
-// to two code points and so shifts every later offset, as in the reference.
-// No other code point lowers to a character of a phrase, so the rest are
-// kept as they are. The caller frees the result with `delete`.
+// phrase lists: ASCII and the German capitals, the capital sharp s, and the
+// Kelvin sign (which lowers to "k"). No other code point lowers to a
+// character of a phrase, so the rest are kept as they are. The result has
+// one code point per code point of `src`, so an offset in it is an offset in
+// the source. Python lowers the dotted capital I to two code points, which
+// shifted every later hit in the reference (a reference bug); here it lowers
+// to "i" alone. The caller frees the result with `delete`.
 @(private = "file")
 py_lower :: proc(src: []rune, allocator := context.allocator) -> []rune {
 	out := make([dynamic]rune, 0, len(src), allocator)
@@ -970,7 +972,7 @@ py_lower :: proc(src: []rune, allocator := context.allocator) -> []rune {
 		case '\u212a':
 			append(&out, 'k')
 		case '\u0130':
-			append(&out, 'i', '\u0307')
+			append(&out, 'i')
 		case:
 			append(&out, c)
 		}

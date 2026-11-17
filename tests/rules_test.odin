@@ -128,16 +128,17 @@ SNIPPETS := [?]Snippet {
 			{4, 9, .Error, "EM-DASH", "em dash in English prose. This character is never correct here.", "| b | x \u2014 y |", "restructure into a comma, colon, parenthesis or two sentences"},
 		},
 	},
-	// Python's lower() turns the Kelvin sign into k, and the dotted capital I
-	// into two code points, which shifts every later phrase hit by one: the
-	// reference reports "eamless" one column late. Reproduced as it is.
+	// Python's lower() turns the Kelvin sign into k. It turns the dotted
+	// capital I into two code points, which made the reference report
+	// "eamless" one column late; the port keeps offsets aligned, so this
+	// expectation is the reference's corrected by hand.
 	{
 		lang = "en",
 		text = "the \u212aey takeaway and \u0130 seamless",
 		note = "language: en",
 		want = {
 			{1, 1, .Warning, "AI-PHRASE", "“the \u212aey takeaway” reads as machine prose. If the point is the point, just make it.", "the \u212aey takeaway and \u0130 seamless", ""},
-			{1, 25, .Warning, "AI-PHRASE", "“eamless” reads as machine prose. Empty intensifier. Say what actually happens.", "the \u212aey takeaway and \u0130 seamless", ""},
+			{1, 24, .Warning, "AI-PHRASE", "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.", "the \u212aey takeaway and \u0130 seamless", ""},
 		},
 	},
 	// Four digits before the comma, four after it, or a word character in
@@ -294,14 +295,24 @@ findings_sort_by_line_col_and_rule_stably :: proc(t: ^testing.T) {
 	}
 }
 
-// Nine dotted capital I lengthen the lowered text by nine, so "nahtlos" is
-// found at an offset past the end of the source. The reference raises
-// IndexError there; the port skips the hit. Hand-written, since the
-// reference has no answer to compare with.
+// A phrase after dotted capital I's is found where it is. The reference
+// lowered each to two code points, so it reported the hit one column late
+// per I, quoted the wrong text, and with nine of them looked past the end of
+// the source and raised IndexError. Hand-written, since the reference's
+// answer is the bug.
 @(test)
-a_phrase_past_the_end_of_the_source_is_skipped :: proc(t: ^testing.T) {
-	result, err := prose.check_text("\u0130\u0130\u0130\u0130\u0130\u0130\u0130\u0130\u0130 nahtlos", {lang = "de"})
+a_phrase_after_a_dotted_capital_i_keeps_its_column :: proc(t: ^testing.T) {
+	text := "\u0130\u0130\u0130\u0130\u0130\u0130\u0130\u0130\u0130 nahtlos"
+	result, err := prose.check_text(text, {lang = "de"})
 	defer prose.file_result_destroy(&result)
 	testing.expect_value(t, err.message, "")
-	testing.expect_value(t, len(result.findings), 0)
+	if !testing.expect_value(t, len(result.findings), 1) {
+		return
+	}
+	f := result.findings[0]
+	testing.expect_value(t, f.rule, "AI-PHRASE")
+	testing.expect_value(t, f.line, 1)
+	testing.expect_value(t, f.col, 11)
+	testing.expect_value(t, f.message, "\u201cnahtlos\u201d reads as machine prose. Leere Verstärkung. Sag, was passiert.")
+	testing.expect_value(t, f.excerpt, text)
 }
