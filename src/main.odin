@@ -37,6 +37,10 @@ options:
   --selftest         show the settings, the backend and the dictionaries,
                      and probe the backend
   --rules            print the language rule
+  --setup            ask which LanguageTool to use and write the settings
+                     file; needs a terminal
+  --values-stdin     with --setup: read the settings as a JSON object on
+                     standard input instead (what /prose:setup does)
   --version          print the version
   -h, --help         print this help
 
@@ -57,6 +61,8 @@ exit status: 0 clean, 1 an error found (or a warning with --strict),
 // - `no_color`: NO_COLOR is set, to any value, empty included.
 // - `stdout_is_terminal`: colors are used only when this is set and
 //   `no_color` is not.
+// - `stdin_is_terminal`: `--setup` without `--values-stdin` asks its
+//   questions only when this and `stdout_is_terminal` are both set.
 // - `hunspell_command`: the local spelling program; "" means
 //   `$PROSE_HUNSPELL`, else `hunspell` on PATH.
 // - `rbw`: the Premium key lookup through rbw; nil is rbw absent.
@@ -70,6 +76,7 @@ Run_Env :: struct {
 	skill_dir:          string,
 	no_color:           bool,
 	stdout_is_terminal: bool,
+	stdin_is_terminal:  bool,
 	hunspell_command:   string,
 	rbw:                proc(item: string) -> (string, bool),
 	lt_timing:          Lt_Timing,
@@ -85,6 +92,7 @@ run_env_from_os :: proc(allocator := context.allocator) -> Run_Env {
 		skill_dir = skill_dir(allocator),
 		no_color = no_color,
 		stdout_is_terminal = os.is_tty(os.stdout),
+		stdin_is_terminal = os.is_tty(os.stdin),
 		hunspell_command = strings.clone(hunspell_program(), allocator),
 		rbw = rbw_lookup,
 		lt_timing = LT_TIMING,
@@ -129,6 +137,7 @@ version_line :: proc(version: string, allocator := context.allocator) -> string 
 Cli_Args :: struct {
 	files:                                                      [dynamic]string,
 	stdin, no_lt, picky, json, strict, selftest, rules, version: bool,
+	setup, values_stdin:                                        bool,
 	help:                                                       bool,
 	lang:                                                       string,
 }
@@ -167,6 +176,10 @@ parse_args :: proc(args: []string) -> (a: Cli_Args, problem: string) {
 			a.rules = true
 		case "--version":
 			a.version = true
+		case "--setup":
+			a.setup = true
+		case "--values-stdin":
+			a.values_stdin = true
 		case "-h", "--help":
 			a.help = true
 		case "--lang":
@@ -216,6 +229,17 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer, env: Ru
 	color := env.stdout_is_terminal && !env.no_color
 	if a.rules {
 		return print_rules(stdout, stderr, env)
+	}
+	if a.values_stdin && !a.setup {
+		fmt.wprintf(stderr, "prose: --values-stdin goes with --setup\n")
+		return 2
+	}
+	if a.setup {
+		if len(a.files) > 0 || a.stdin || a.selftest || a.rules {
+			fmt.wprintf(stderr, "prose: --setup takes no files and no other action\n")
+			return 2
+		}
+		return setup(a.values_stdin, stdin, stdout, stderr, env)
 	}
 	if a.selftest {
 		return selftest(stdout, env, color)
@@ -415,15 +439,14 @@ text_note :: proc(note: string, backend: Backend) -> string {
 MAX_STDIN_BYTES :: 256 << 20
 
 // read_all reads `r` to its end. `ok` is false on a read error or past
-// MAX_STDIN_BYTES. The data is allocated with `context.allocator`.
-@(private = "file")
-read_all :: proc(r: io.Reader) -> (data: []byte, ok: bool) {
+// `limit` bytes. The data is allocated with `context.allocator`.
+read_all :: proc(r: io.Reader, limit := MAX_STDIN_BYTES) -> (data: []byte, ok: bool) {
 	buf := make([dynamic]byte)
 	chunk: [64 << 10]byte
 	for {
 		n, err := io.read(r, chunk[:])
 		append(&buf, ..chunk[:n])
-		if len(buf) > MAX_STDIN_BYTES {
+		if len(buf) > limit {
 			return buf[:], false
 		}
 		if err == .EOF || (err == nil && n == 0) {
@@ -662,4 +685,38 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	paint(w, detail, .Dim, color)
 	_, _ = io.write_string(w, "\n")
 	return 0 if ok else 2
+}
+
+// setup is --setup: the questions on a terminal, or with `values_stdin` the
+// JSON object on standard input. Both write config.json in the config
+// directory. Exit 0 written, 2 not.
+@(private = "file")
+setup :: proc(values_stdin: bool, stdin: io.Reader, stdout, stderr: io.Writer, env: Run_Env) -> int {
+	if !values_stdin && !(env.stdin_is_terminal && env.stdout_is_terminal) {
+		fmt.wprintf(stderr, SETUP_NEEDS_TERMINAL + "\n")
+		return 2
+	}
+	path := config_file_in(env.config_dir, "config.json")
+	defer delete(path)
+	if path == "" {
+		fmt.wprintf(stderr, "prose: no config directory: set XDG_CONFIG_HOME or HOME\n")
+		return 2
+	}
+	if !values_stdin {
+		return run_setup_tty(stdin, stdout, stderr, path)
+	}
+	data, ok := read_all(stdin, MAX_SETTINGS_BYTES)
+	defer delete(data)
+	if !ok {
+		fmt.wprintf(stderr, "prose: cannot read the values on standard input (more than %d bytes?)\n", MAX_SETTINGS_BYTES)
+		return 2
+	}
+	err := apply_values(path, string(data))
+	defer settings_error_destroy(&err)
+	if err.problem != "" {
+		fmt.wprintf(stderr, "prose: %s\nprose: the settings file is unchanged\n", err.problem)
+		return 2
+	}
+	fmt.wprintf(stdout, "wrote %s\n", path)
+	return 0
 }
