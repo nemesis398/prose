@@ -1,7 +1,8 @@
 # A stand-in until the shared workflow of ravnix's foundation repository
-# replaces it: the checker's tests on three systems, the install tests, the
-# repository's own prose checked by the freshly built checker, the manifests
-# and the Markdown.
+# replaces it. On every push it builds and tests the four release binaries
+# the way a release does (release.yml calls this workflow), checks the
+# repository's own prose with the freshly built checker, and validates the
+# manifests and the Markdown.
 name: check
 
 on:
@@ -9,6 +10,7 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,22 +20,37 @@ env:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
+    name: test (${{ matrix.asset }})
     runs-on: ${{ matrix.os }}
     strategy:
-      # One push shows every system's failures, not only the first one's.
+      # One push shows every platform's failures, not only the first one's.
       fail-fast: false
       matrix:
         include:
+          # Linux builds in a manylinux_2_28 container (AlmaLinux 8, glibc
+          # 2.28), whose libcurl has no symbol versions: a binary linked
+          # against Ubuntu's libcurl requires CURL_OPENSSL_4, and the loader
+          # warns about that on every start on Fedora and Arch.
           - os: ubuntu-24.04
+            asset: prose-check-linux-x86_64
+            container: quay.io/pypa/manylinux_2_28_x86_64@sha256:d086f64cddcace250ef0f0073583c51b8298159303290a730c9f59bd91edfd2c
             odin: odin-linux-amd64-dev-2026-10.tar.gz
             odin-sha256: c3c8b095621fd0c75f7f73e3a0829f1b4d45324225f20ba11ed8dc4da310a8ab
+          - os: ubuntu-24.04-arm
+            asset: prose-check-linux-arm64
+            container: quay.io/pypa/manylinux_2_28_aarch64@sha256:34a5e614a4eb26f73f8bf44cbbf2acf8011620453d03ea35a58537bb3cde44de
+            odin: odin-linux-arm64-dev-2026-10.tar.gz
+            odin-sha256: 99c43e9670a285901d6cfee5f56197b74c7d6f7c537b35ecba0c1b44ac2e4df8
           - os: macos-15
+            asset: prose-check-macos-arm64
             odin: odin-macos-arm64-dev-2026-10.tar.gz
             odin-sha256: b276c6ac87c3eea17446a6ca9080089b6e9f492057fb773591775ee49d92a1cf
           - os: windows-2025
+            asset: prose-check-windows-x86_64.exe
             odin: odin-windows-amd64-dev-2026-10.zip
             odin-sha256: b6b2e426a8b6f147b74ec7e18bef8df27cf40fe16193159df7ca09a0cc0c2011
+    env:
+      ASSET: ${{ matrix.asset }}
     steps:
       # The corpus and the golden files are compared byte for byte.
       - name: Keep LF line endings on Windows
@@ -43,11 +60,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install clang, libcurl and zlib
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libcurl4-openssl-dev zlib1g-dev
+      # Odin's Linux binary is static, so the copy unpacked here also runs
+      # inside the container.
       - name: Install Odin
         if: runner.os != 'Windows'
         env:
@@ -81,17 +95,50 @@ jobs:
           Join-Path $env:RUNNER_TEMP 'dist' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - run: odin version
 
-      # Linux and macOS: the Makefile. It runs the Odin tests, the POSIX
-      # install tests and, where pwsh is installed, the PowerShell ones.
-      - name: Test
+      # Linux: one container for the job, started from a step (the image
+      # has no node, which `container:` would need for the actions). It
+      # runs as the runner's user, so the files it writes stay the runner's
+      # and the tests that take permissions away are not run as root.
+      - name: Start the build container (Linux)
+        if: matrix.container
+        env:
+          IMAGE: ${{ matrix.container }}
+        run: |
+          docker run -d --name build --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$GITHUB_WORKSPACE:/w" -v "$RUNNER_TEMP/odin:/odin:ro" -w /w \
+            "$IMAGE" sleep infinity
+          docker exec -u 0 build dnf install -y -q clang libcurl-devel zlib-devel
+          docker exec -u 0 build ln -s /odin/odin /usr/local/bin/odin
+          docker exec build odin version
+
+      # Linux and macOS: the Makefile, one suite per step.
+      - name: Odin tests
         if: runner.os != 'Windows'
-        run: make test
+        run: ${{ matrix.container && 'docker exec build ' || '' }}make test-odin
+      - name: Install tests (POSIX)
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: ${{ matrix.container && 'docker exec build ' || '' }}make test-install
+      # On the runner itself: the container has no pwsh.
+      - name: Install tests (PowerShell, where pwsh is installed)
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: make test-install-ps1
       - name: Build
         if: ${{ !cancelled() && runner.os != 'Windows' }}
-        run: make build
+        run: |
+          ${{ matrix.container && 'docker exec build ' || '' }}make build
+          mkdir -p dist
+          cp skills/prose/bin/prose-check "dist/$ASSET"
       - name: Check the repository's prose with the built checker
         if: ${{ !cancelled() && runner.os != 'Windows' }}
-        run: make doccheck
+        run: ${{ matrix.container && 'docker exec build ' || '' }}make doccheck
+      - name: No versioned libcurl symbols (Linux)
+        if: ${{ !cancelled() && matrix.container }}
+        run: |
+          readelf -V "dist/$ASSET"
+          if readelf -V "dist/$ASSET" | grep -E 'File: libcurl|CURL_OPENSSL'; then
+            echo "::error::$ASSET requires versioned libcurl symbols; it would warn on every start where libcurl has none"
+            exit 1
+          fi
 
       # Windows has no make: the same commands in PowerShell. The POSIX
       # install test and the hunspell stubs do not run here.
@@ -117,8 +164,9 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           $version = (Get-Content -LiteralPath .claude-plugin/plugin.json -Raw | ConvertFrom-Json).version
-          New-Item -ItemType Directory -Force -Path skills/prose/bin | Out-Null
+          New-Item -ItemType Directory -Force -Path skills/prose/bin, dist | Out-Null
           odin build src "-out:skills/prose/bin/prose-check.exe" -vet -o:speed -microarch:x86-64-v2 "-define:PROSE_VERSION=$version"
+          Copy-Item -LiteralPath skills/prose/bin/prose-check.exe -Destination "dist/$env:ASSET"
       - name: Check the repository's prose with the built checker (Windows)
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         shell: pwsh
@@ -128,6 +176,27 @@ jobs:
           $patterns = ((Select-String -LiteralPath Makefile -Pattern '^DOCS := (.+)$').Matches[0].Groups[1].Value -split '\s+')
           $docs = @(foreach ($p in $patterns) { (Get-ChildItem -Path $p -File).FullName })
           ./skills/prose/bin/prose-check.exe --no-lt @docs
+
+      # What both installers ask of an installed binary, run on the runner
+      # itself (for Linux, outside the container it was built in): exactly
+      # the version on stdout, and nothing on stderr, where a loader warning
+      # would show.
+      - name: The binary runs, names the version, and says nothing else
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' .claude-plugin/plugin.json)
+          got=$("./dist/$ASSET" --version 2>"$RUNNER_TEMP/stderr")
+          if [ "$got" != "prose-check $version" ] || [ -s "$RUNNER_TEMP/stderr" ]; then
+            echo "::error::$ASSET --version printed '$got' and on stderr: $(cat "$RUNNER_TEMP/stderr")"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
 
   manifests-and-markdown:
     runs-on: ubuntu-24.04

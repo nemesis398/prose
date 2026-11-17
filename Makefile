@@ -11,15 +11,23 @@ TEST_DEFINES := -define:ODIN_TEST_RANDOM_SEED=1 \
 	-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true \
 	-define:ODIN_TEST_FANCY=false
 
-.PHONY: build test lint doccheck reference-test
+.PHONY: build test test-odin test-install test-install-ps1 lint doccheck reference-test
 
 build:
 	mkdir -p skills/prose/bin
 	odin build src -out:skills/prose/bin/prose-check $(ODIN_FLAGS) -define:PROSE_VERSION=$(version)
 
-test:
+# The three suites. CI runs each as a step of its own, so that one failing
+# suite does not hide another's result.
+test: test-odin test-install test-install-ps1
+
+test-odin:
 	odin test tests $(ODIN_FLAGS) $(TEST_DEFINES)
+
+test-install:
 	sh tests/install_test.sh
+
+test-install-ps1:
 	@if command -v pwsh >/dev/null 2>&1; then \
 		pwsh -NoProfile -File tests/install_test.ps1; \
 	else \
