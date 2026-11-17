@@ -27,7 +27,12 @@ Fake_Mode :: enum {
 	Replay,
 	// Answer every POST with 403.
 	Refuse_403,
-	// Read every request and never answer; the client has to give up.
+	// Read every request and never answer; the client has to give up. The
+	// connection stays open, unanswered, until the fake stops, and the fake
+	// goes on accepting: waiting for the client to close instead would wait
+	// for ever when a child process started meanwhile by another test has
+	// inherited the client's socket, as it can from a libcurl that does not
+	// open its sockets close-on-exec (7.61 does not).
 	Hang,
 	// Replay, except that the second distinct check request (one with a
 	// `data` field) and every retry of it get 500.
@@ -42,6 +47,8 @@ Fake_Lt :: struct {
 	worker:    ^thread.Thread,
 	stopping:  bool, // atomic
 	requests:  int, // atomic: every request read in full
+	// The server thread's own: the connections Hang holds open.
+	held:      [dynamic]net.TCP_Socket,
 	// The server thread's own, for Fail_Second_Chunk.
 	data_keys: [dynamic]string,
 }
@@ -70,6 +77,7 @@ fake_lt_start :: proc(recordings_dir: string, mode: Fake_Mode) -> (fake: ^Fake_L
 	fake.listener = listener
 	fake.port = ep.port
 	fake.data_keys = make([dynamic]string)
+	fake.held = make([dynamic]net.TCP_Socket)
 	fake.worker = thread.create(fake_serve)
 	fake.worker.data = fake
 	fake.worker.init_context = context
@@ -90,6 +98,10 @@ fake_lt_stop :: proc(fake: ^Fake_Lt) {
 	thread.join(fake.worker)
 	thread.destroy(fake.worker)
 	net.close(fake.listener)
+	for c in fake.held {
+		net.close(c)
+	}
+	delete(fake.held)
 	for k in fake.data_keys {
 		delete(k)
 	}
@@ -118,8 +130,11 @@ fake_serve :: proc(th: ^thread.Thread) {
 			return
 		}
 		net.set_option(client, .Receive_Timeout, time.Second)
-		fake_handle(fake, client)
-		net.close(client)
+		if fake_handle(fake, client) {
+			append(&fake.held, client)
+		} else {
+			net.close(client)
+		}
 	}
 }
 
@@ -178,8 +193,10 @@ read_request :: proc(client: net.TCP_Socket, raw: ^[dynamic]byte) -> (req: Reque
 	return Request{method = parts[0], path = parts[1], body = string(raw[body_start:body_start + length])}, true
 }
 
+// fake_handle answers one connection. True means keep it open, unanswered,
+// until the fake stops.
 @(private = "file")
-fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) {
+fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 	raw := make([dynamic]byte)
 	defer delete(raw)
 	req, ok := read_request(client, &raw)
@@ -189,19 +206,7 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) {
 	sync.atomic_add(&fake.requests, 1)
 
 	if fake.mode == .Hang {
-		// Hold the connection until the client gives up or the fake stops.
-		buf: [4096]byte
-		for !sync.atomic_load(&fake.stopping) {
-			n, err := net.recv_tcp(client, buf[:])
-			if err == nil && n == 0 {
-				return
-			}
-			// A receive timeout shows as Would_Block on Linux: keep waiting.
-			if err != nil && err != .Timeout && err != .Would_Block && err != .Interrupted {
-				return
-			}
-		}
-		return
+		return true
 	}
 
 	path := req.path
@@ -258,6 +263,7 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) {
 	}
 	defer delete(body)
 	send_response(client, 200, "application/json", string(body))
+	return
 }
 
 @(private = "file")
