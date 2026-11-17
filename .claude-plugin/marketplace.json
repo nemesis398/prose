@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "prose",
+  "owner": {
+    "name": "nemesis398",
+    "url": "https://github.com/nemesis398"
+  },
+  "metadata": {
+    "description": "The prose skill for Claude Code, as a marketplace of one."
+  },
+  "plugins": [
+    {
+      "name": "prose",
+      "source": "./",
+      "description": "One writing style for German and English, with a checker that proves a text follows it."
+    }
+  ]
+}
