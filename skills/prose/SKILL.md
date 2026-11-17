@@ -45,8 +45,12 @@ Windows).
 
 **When the binary is missing**, after a fresh install or a plugin update (an
 update lands in a new folder), run `/prose:setup`, or the `install` script
-beside this file (`install.ps1` on Windows). Until the checker has run, the
-text is unchecked: say so, and never report it as checked.
+beside this file (`install.ps1` on Windows). The script reads the version from
+the plugin manifest two folders up; a copied folder has none, so set
+`PROSE_VERSION` to the release to install: a release tag of
+`github.com/nemesis398/prose` without its `v`.
+Until the checker has run, the text is unchecked: say so, and never report it
+as checked.
 
 Useful flags: `--no-lt` skips LanguageTool and runs the rule pass only,
 `--picky` turns on LanguageTool's formal-text rules for something that has to
@@ -57,8 +61,10 @@ see the settings and which backend answers.
 Exit 0 means clean, 1 means an error was found. **Exit 2 means the check did
 not run, never that the text is clean.** Read the line it printed:
 
-- It names the settings file: the file is broken. Pass on what it says, and
-  suggest `/prose:setup`, which can repair it.
+- It names the settings file: the file is broken. Pass on what it says.
+  `/prose:setup` repairs a wrong backend, server, username, rbw item or
+  language rule. A file that is not valid JSON, or a wrong-typed key that
+  setup does not write, such as `ignoreWords`, has to be fixed by hand.
 - It says LanguageTool did not run and names what is missing, such as the
   Premium account or key: run again with `--no-lt`, which still checks
   everything else, and say that LanguageTool did not run.

@@ -581,7 +581,7 @@ find_key :: proc(
 		}
 	}
 
-	item := "no rbw item named in \"languagetool.keyItem\""
+	item := "an rbw item named in \"languagetool.keyItem\""
 	if s.key_item != "" {
 		item = fmt.tprintf("the rbw item \"%s\" (rbw installed and unlocked)", s.key_item)
 	}

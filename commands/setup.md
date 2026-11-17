@@ -7,8 +7,11 @@ description: Install the prose checker and choose where LanguageTool may send yo
 Install `prose-check` if it is missing or out of date, then ask the user where
 LanguageTool may send their text, and write the answers to the settings file.
 Ask every question in the question dialog (`AskUserQuestion`), never as prose
-in a message. Each question gets two to four options; the dialog adds a
-free-text answer on its own, which is how the user types a URL or a name.
+in a message. The dialog needs two to four options per question, and adds a
+free-text answer (Other) on its own, which is how the user types a URL or a
+name. Where a question below lists fewer than two options, as on a fresh
+install, add "Type it in Other" with the description "pick Other below and
+type the value"; if the user picks that option itself, ask again.
 
 ## 1. The binary
 
@@ -65,8 +68,19 @@ stored value as its first option:
 cat "${XDG_CONFIG_HOME:-$HOME/.config}/prose/config.json" 2>/dev/null || echo "no settings file yet"
 ```
 
-If `"<bin>" --rules` exits 2, the file is broken. Say what it printed; the
-answers below repair it.
+Then run `"<bin>" --rules`. If it exits 2, the file is broken, and the line
+it printed says how:
+
+- **Setup cannot repair it** when the line says "is not valid JSON", "must be
+  a JSON object", "cannot be read", "is not a regular file" or "is too big",
+  or names `ignoreWords`. Setup merges into the stored file, and it never
+  writes a result that still fails, so it refuses these. Stop here: show the
+  line, and tell the user to fix the file or move it aside by hand, then run
+  `/prose:setup` again.
+- **The questions below repair it** when the line names `languageRule` or a
+  key under `languagetool`. For the key it names, do not offer the stored
+  value: step 6 must write a new value for that key, or `null`. A broken
+  `username` or `keyItem` under another backend than `premium` gets `null`.
 
 ## 3. The backend
 
@@ -84,24 +98,25 @@ option as recommended: where the user's text may go is their decision.
 ## 4. The backend's values
 
 For `server`, ask for the URL. Offer the stored URL first when there is one,
-and `http://localhost:8081`, where the Docker command in
-`skills/prose/references/languagetool.md` publishes a local server. The user
-types any other URL as free text. It must start with `http://` or `https://`;
+then `http://localhost:8081`, where the Docker command in
+`skills/prose/references/languagetool.md` publishes a local server, then
+"Type it in Other". The user types any other URL as free text. It must start with `http://` or `https://`;
 ask again if it does not.
 
 For `premium`, ask two questions.
 
-1. **The account's login.** Offer the stored username when there is one, and
-   "Leave it unset, I export `LANGUAGETOOL_USERNAME`". The user types the
-   login as free text.
+1. **The account's login.** Offer the stored username when there is one,
+   then "Type it in Other", then "Leave it unset, I export
+   `LANGUAGETOOL_USERNAME`". The user types the login as free text.
 2. **Where the API key comes from.** Never ask for the key, never show it, and
    never write it anywhere. The checker reads it from the first of these
    sources that holds it:
    - **The environment variable `LANGUAGETOOL_API_KEY`.** Nothing to write.
      The variable has to be set where Claude Code starts.
    - **A Bitwarden item, read with `rbw`.** Ask for the item's name or id as a
-     follow-up question, offering the stored `keyItem` first. The key is the
-     item's password. The checker reads it only while `rbw` is unlocked, and
+     follow-up question, offering the stored `keyItem` first, then
+     `LanguageTool` (an item named after the service), then "Type it in
+     Other". The key is the item's password. The checker reads it only while `rbw` is unlocked, and
      never prompts.
    - **The file `credentials`** beside `config.json`, holding only the key, at
      mode 600. Tell the user to create it in their own terminal, not in this
@@ -118,8 +133,10 @@ replace it in their LanguageTool account.
 Ask for the rule that `prose-check --rules` prints before every text: which
 language a text is written in, and when a German reader gets `Sie`. Offer the
 stored rule first when there is one, then "No rule", which means: write in the
-language of the request, with lowercase `du` for German readers. The user types
-any other rule as free text.
+language of the request, with lowercase `du` for German readers. Then offer an
+example the user may take as it is: "German for notes and mails, English for
+code and commit messages; Sie for customers". The user types any other rule as
+free text.
 
 ## 6. Writing the file
 
@@ -134,6 +151,7 @@ A key set to `null` is deleted.
   key comes from rbw.
 - Set `languageRule` to the rule, or to `null` for "No rule". Leave it out
   when the user kept the stored one.
+- Write every key that step 2 found broken, as it says there.
 - Never add a key such as `apiKey`; the checker refuses it.
 
 Escape `"` and `\` in every string, so that the object is valid JSON. For
@@ -156,5 +174,6 @@ sentence, never the user's text, to see whether the backend answers. If it
 exits 2, say which value is missing and where to set it, using the line it
 printed.
 
-Finish with one line on what the setup changed: the backend, where the text
-now goes, and the language rule.
+Finish with what the setup changed: the backend, where the text now goes,
+and the language rule. Name the checker's path (`<bin>`) too, for a user who
+wants to run it in a terminal; it changes with every plugin update.

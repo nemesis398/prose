@@ -51,12 +51,16 @@ release that matches the plugin's version, checks it against the release's
 LanguageTool may send your text, and writes your answers to the settings
 file. Run it again after a plugin update, which lands in a new folder.
 
-Without the plugin system, copy `skills/prose/` into `~/.claude/skills/` and
-run its installer. A copied folder has no plugin manifest to read the version
-from, so name the release:
+Without the plugin system, clone the repository and run the installer inside
+the clone, where it reads the version from the plugin manifest. Then copy
+`skills/prose/`, with the `bin/` the installer filled, into
+`~/.claude/skills/` (remove an older copy first), and choose a backend:
 
 ```sh
-PROSE_VERSION=0.1.0 sh ~/.claude/skills/prose/install
+git clone https://github.com/nemesis398/prose.git
+sh prose/skills/prose/install
+mkdir -p ~/.claude/skills
+cp -R prose/skills/prose ~/.claude/skills/
 ~/.claude/skills/prose/bin/prose-check --setup
 ```
 
@@ -64,9 +68,16 @@ On Windows, run the PowerShell installer. The default execution policy
 blocks scripts, hence the flag:
 
 ```powershell
-$env:PROSE_VERSION = '0.1.0'
-powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\.claude\skills\prose\install.ps1"
+git clone https://github.com/nemesis398/prose.git
+powershell -NoProfile -ExecutionPolicy Bypass -File prose\skills\prose\install.ps1
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+Copy-Item -Recurse prose\skills\prose "$HOME\.claude\skills\"
+& "$HOME\.claude\skills\prose\bin\prose-check.exe" --setup
 ```
+
+When `main` is ahead of the latest release, the installer finds no release
+for its version. Check out the latest release tag first, or build the checker
+from source (see below).
 
 Binaries exist for Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64.
 The installers need `curl` and `sha256sum` or `shasum` (PowerShell brings its
@@ -84,9 +95,13 @@ a reader, and on requests such as:
 - "make this sound less like AI"
 
 Claude checks what it wrote and reports what the checker said. You can run the
-checker yourself:
+checker yourself. It is `bin/prose-check` inside the skill folder: for a
+copied folder that is `~/.claude/skills/prose/bin/prose-check`, and for the
+plugin `/prose:setup` names the path, which changes with every plugin update.
+The examples put the copied folder's `bin/` on `PATH` first:
 
 ```sh
+export PATH="$HOME/.claude/skills/prose/bin:$PATH"
 prose-check notes/*.md            # check files
 prose-check --stdin < draft.md    # check standard input
 prose-check --no-lt README.md     # the rules only, without LanguageTool

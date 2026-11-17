@@ -590,6 +590,15 @@ no_key_anywhere_names_the_three_sources :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(problem2, "languagetool.keyItem"), problem2)
 	testing.expect(t, strings.contains(problem2, cred), problem2)
 	testing.expect(t, strings.contains(problem2, "LANGUAGETOOL_API_KEY"), problem2)
+	want2 := strings.concatenate(
+		{
+			`LanguageTool Premium has no key: set LANGUAGETOOL_API_KEY, or use an rbw item named in "languagetool.keyItem", or put the key alone in `,
+			cred,
+			" (mode 600)",
+		},
+		context.temp_allocator,
+	)
+	testing.expectf(t, problem2 == want2, "got  %q\nwant %q", problem2, want2)
 }
 
 @(test)
