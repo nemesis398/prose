@@ -42,6 +42,23 @@ check_text :: proc(
 	result: File_Result,
 	err: Check_Error,
 ) {
+	return check_text_timed(source, opts, LT_TIMING, allocator)
+}
+
+// check_text_timed is `check_text` with the LanguageTool pass's timeouts
+// and retries given, so a test can wait 2 s for a server that hangs. With
+// `use_lt`, a backend that refuses or does not answer the probe is a
+// `Check_Error` holding the pass's `Lt_Error` message; a `.None` backend
+// adds nothing.
+check_text_timed :: proc(
+	source: string,
+	opts: Check_Options,
+	timing: Lt_Timing,
+	allocator := context.allocator,
+) -> (
+	result: File_Result,
+	err: Check_Error,
+) {
 	src := utf8.string_to_runes(source, allocator)
 	defer delete(src, allocator)
 	m := mask_markdown(src, allocator)
@@ -51,12 +68,21 @@ check_text :: proc(
 
 	findings := check_deterministic(src, &m, blocks, allocator)
 
-	// The seam for the LanguageTool pass (Task 8): it appends its findings to
-	// `findings` and sets `pass_note`, which lands after " | " in the note.
+	// The LanguageTool pass's note lands after " | " in the note.
 	pass_note := ""
+	defer delete(pass_note, allocator)
 	if opts.use_lt {
-		findings_destroy(findings[:], allocator)
-		return {}, Check_Error{strings.clone("the LanguageTool pass is not built yet", allocator)}
+		starts := line_index(src, allocator)
+		defer delete(starts, allocator)
+		lt, note, lt_err := run_languagetool_timed(src, &m, blocks, starts, opts.backend, opts.words, opts.picky, timing, allocator)
+		if lt_err.message != "" {
+			delete(lt)
+			findings_destroy(findings[:], allocator)
+			return {}, Check_Error{lt_err.message}
+		}
+		append(&findings, ..lt[:])
+		delete(lt)
+		pass_note = note
 	}
 
 	sort_findings(findings[:])

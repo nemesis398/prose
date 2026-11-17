@@ -119,7 +119,8 @@ json_int :: proc(w: io.Writer, n: int) {
 // json_string writes `s` as Python's json.dumps(s, ensure_ascii=False) does:
 // `"`, `\`, \n, \r, \t, \b and \f get their short escape, the other control
 // characters below 0x20 become \u00XX, and every other byte goes through.
-@(private = "file")
+// The LanguageTool pass writes its request's `data` with it too.
+@(private)
 json_string :: proc(w: io.Writer, s: string) {
 	HEX := "0123456789abcdef"
 	_ = io.write_byte(w, '"')
