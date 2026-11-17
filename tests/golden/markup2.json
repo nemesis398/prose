@@ -1,0 +1,71 @@
+[
+  {
+    "file": "markup2.md",
+    "note": "language: en",
+    "findings": [
+      {
+        "line": 4,
+        "col": 10,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "sentence — which is a deliberate em dash. It…",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 5,
+        "col": 33,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "in the middle of a phrase, and a  double space after it.",
+        "suggestion": "single space"
+      },
+      {
+        "line": 7,
+        "col": 32,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "1. First step: install the tool , then run it.",
+        "suggestion": ","
+      },
+      {
+        "line": 8,
+        "col": 17,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“it's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "2. Second step: it's worth noting that the cache is warm.",
+        "suggestion": ""
+      },
+      {
+        "line": 9,
+        "col": 54,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "…a closing paren marker and **bold  spacing** inside.",
+        "suggestion": "single space"
+      },
+      {
+        "line": 30,
+        "col": 43,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…ne with a number 5GB and the word seamless, plus a stray space , here.",
+        "suggestion": ""
+      },
+      {
+        "line": 30,
+        "col": 71,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…word seamless, plus a stray space , here.",
+        "suggestion": ","
+      }
+    ]
+  }
+]

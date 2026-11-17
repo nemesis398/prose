@@ -7,6 +7,11 @@
 # tests/golden-lt/NAME.json     with LanguageTool, from a server on 127.0.0.1:PORT
 # tests/golden-lt/de-note.picky.json   de-note.md with --picky
 #
+# The script fails, naming the file, when a LanguageTool run holds an
+# LT-CHUNK-FAILED finding: that is the reference's answer to a request the
+# server could not serve, such as a missing recording, and it must never be
+# taken for a golden result.
+#
 # A server must already listen on PORT (default 18099): fake_lt.py replays the
 # recordings, record_lt.py records the missing ones. The reference runs with no
 # settings and no credentials: an empty HOME and XDG_CONFIG_HOME, no skill
@@ -32,15 +37,31 @@ reference() {
     fi
 }
 
+# Files that get no LanguageTool run, so no golden-lt file: their kinds of
+# markup were added after the one Premium recording session, and a new
+# recording would need a new paid run.
+lt_excluded=" markup2.md "
+
+# Fail when the output of a LanguageTool run says a chunk went unchecked.
+no_failed_chunk() {
+    if command grep -q '"LT-CHUNK-FAILED"' "$2"; then
+        echo "make_golden: $1 has an LT-CHUNK-FAILED finding, a recording is missing" >&2
+        return 1
+    fi
+}
+
 cd "$root/tests/corpus"
 for file in *.md; do
     name=${file%.md}
     reference python3 -B "$root/reference/check.py" --no-lt --json "$file" \
         > "$root/tests/golden/$name.json"
+    case "$lt_excluded" in *" $file "*) continue ;; esac
     reference LANGUAGETOOL_SERVER="http://127.0.0.1:$port" \
         python3 -B "$root/reference/check.py" --json "$file" \
         > "$root/tests/golden-lt/$name.json"
+    no_failed_chunk "$file" "$root/tests/golden-lt/$name.json"
 done
 reference LANGUAGETOOL_SERVER="http://127.0.0.1:$port" \
     python3 -B "$root/reference/check.py" --picky --json de-note.md \
     > "$root/tests/golden-lt/de-note.picky.json"
+no_failed_chunk de-note.md "$root/tests/golden-lt/de-note.picky.json"
