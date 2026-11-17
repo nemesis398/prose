@@ -1,0 +1,148 @@
+# A stand-in until the shared workflow of ravnix's foundation repository
+# replaces it: the checker's tests on three systems, the install tests, the
+# repository's own prose checked by the freshly built checker, the manifests
+# and the Markdown.
+name: check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ODIN_RELEASE: dev-2026-10
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One push shows every system's failures, not only the first one's.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            odin: odin-linux-amd64-dev-2026-10.tar.gz
+            odin-sha256: c3c8b095621fd0c75f7f73e3a0829f1b4d45324225f20ba11ed8dc4da310a8ab
+          - os: macos-15
+            odin: odin-macos-arm64-dev-2026-10.tar.gz
+            odin-sha256: b276c6ac87c3eea17446a6ca9080089b6e9f492057fb773591775ee49d92a1cf
+          - os: windows-2025
+            odin: odin-windows-amd64-dev-2026-10.zip
+            odin-sha256: b6b2e426a8b6f147b74ec7e18bef8df27cf40fe16193159df7ca09a0cc0c2011
+    steps:
+      # The corpus and the golden files are compared byte for byte.
+      - name: Keep LF line endings on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install clang, libcurl and zlib
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libcurl4-openssl-dev zlib1g-dev
+      - name: Install Odin
+        if: runner.os != 'Windows'
+        env:
+          ODIN_ASSET: ${{ matrix.odin }}
+          ODIN_SHA256: ${{ matrix.odin-sha256 }}
+        run: |
+          archive="$RUNNER_TEMP/$ODIN_ASSET"
+          curl -fsSL --retry 3 -o "$archive" "https://github.com/odin-lang/Odin/releases/download/$ODIN_RELEASE/$ODIN_ASSET"
+          if command -v sha256sum >/dev/null; then
+            echo "$ODIN_SHA256  $archive" | sha256sum -c -
+          else
+            echo "$ODIN_SHA256  $archive" | shasum -a 256 -c -
+          fi
+          mkdir -p "$RUNNER_TEMP/odin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/odin" --strip-components=1
+          echo "$RUNNER_TEMP/odin" >>"$GITHUB_PATH"
+      - name: Install Odin (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ODIN_ASSET: ${{ matrix.odin }}
+          ODIN_SHA256: ${{ matrix.odin-sha256 }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = Join-Path $env:RUNNER_TEMP $env:ODIN_ASSET
+          curl.exe -fsSL --retry 3 -o $archive "https://github.com/odin-lang/Odin/releases/download/$env:ODIN_RELEASE/$env:ODIN_ASSET"
+          $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne $env:ODIN_SHA256) { throw "$env:ODIN_ASSET has SHA-256 $sha, not $env:ODIN_SHA256" }
+          # The archive holds one folder, dist.
+          & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $env:RUNNER_TEMP
+          Join-Path $env:RUNNER_TEMP 'dist' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - run: odin version
+
+      # Linux and macOS: the Makefile. It runs the Odin tests, the POSIX
+      # install tests and, where pwsh is installed, the PowerShell ones.
+      - name: Test
+        if: runner.os != 'Windows'
+        run: make test
+      - name: Build
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: make build
+      - name: Check the repository's prose with the built checker
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: make doccheck
+
+      # Windows has no make: the same commands in PowerShell. The POSIX
+      # install test and the hunspell stubs do not run here.
+      - name: Odin tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          odin test tests -vet -o:speed -microarch:x86-64-v2 -define:ODIN_TEST_RANDOM_SEED=1 -define:ODIN_TEST_TRACK_MEMORY=true -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true -define:ODIN_TEST_FANCY=false
+      - name: Install tests under PowerShell 7 (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File tests/install_test.ps1
+      # Started from Windows PowerShell itself, so no PowerShell 7 module
+      # path leaks into it.
+      - name: Install tests under Windows PowerShell 5.1 (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: powershell
+        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/install_test.ps1
+      - name: Build (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $version = (Get-Content -LiteralPath .claude-plugin/plugin.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force -Path skills/prose/bin | Out-Null
+          odin build src "-out:skills/prose/bin/prose-check.exe" -vet -o:speed -microarch:x86-64-v2 "-define:PROSE_VERSION=$version"
+      - name: Check the repository's prose with the built checker (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # The same files as `make doccheck`, read from the Makefile.
+          $patterns = ((Select-String -LiteralPath Makefile -Pattern '^DOCS := (.+)$').Matches[0].Groups[1].Value -split '\s+')
+          $docs = @(foreach ($p in $patterns) { (Get-ChildItem -Path $p -File).FullName })
+          ./skills/prose/bin/prose-check.exe --no-lt @docs
+
+  manifests-and-markdown:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Validate the plugin and the marketplace
+        run: |
+          npx --yes @anthropic-ai/claude-code@2.1.326 plugin validate .
+          npx --yes @anthropic-ai/claude-code@2.1.326 plugin validate .claude-plugin/marketplace.json
+      - name: Lint the Markdown
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
+        with:
+          globs: "**/*.md"

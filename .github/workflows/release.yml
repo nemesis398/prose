@@ -1,0 +1,182 @@
+# A stand-in until the shared workflow of ravnix's foundation repository
+# replaces it. On a tag vX.Y.Z equal to plugin.json's version: the tests and
+# a build on each of the four platforms, then a release with the four
+# binaries and SHA256SUMS, the files that skills/prose/install and
+# install.ps1 fetch.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  ODIN_RELEASE: dev-2026-10
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The tag is v and plugin.json's version
+        id: version
+        run: |
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::the tag $GITHUB_REF_NAME is not v$version, the version in .claude-plugin/plugin.json"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.asset }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            asset: prose-check-linux-x86_64
+            odin: odin-linux-amd64-dev-2026-10.tar.gz
+            odin-sha256: c3c8b095621fd0c75f7f73e3a0829f1b4d45324225f20ba11ed8dc4da310a8ab
+          - os: ubuntu-24.04-arm
+            asset: prose-check-linux-arm64
+            odin: odin-linux-arm64-dev-2026-10.tar.gz
+            odin-sha256: 99c43e9670a285901d6cfee5f56197b74c7d6f7c537b35ecba0c1b44ac2e4df8
+          - os: macos-15
+            asset: prose-check-macos-arm64
+            odin: odin-macos-arm64-dev-2026-10.tar.gz
+            odin-sha256: b276c6ac87c3eea17446a6ca9080089b6e9f492057fb773591775ee49d92a1cf
+          - os: windows-2025
+            asset: prose-check-windows-x86_64.exe
+            odin: odin-windows-amd64-dev-2026-10.zip
+            odin-sha256: b6b2e426a8b6f147b74ec7e18bef8df27cf40fe16193159df7ca09a0cc0c2011
+    env:
+      ASSET: ${{ matrix.asset }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      # The corpus and the golden files are compared byte for byte.
+      - name: Keep LF line endings on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install clang, libcurl and zlib
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libcurl4-openssl-dev zlib1g-dev
+      - name: Install Odin
+        if: runner.os != 'Windows'
+        env:
+          ODIN_ASSET: ${{ matrix.odin }}
+          ODIN_SHA256: ${{ matrix.odin-sha256 }}
+        run: |
+          archive="$RUNNER_TEMP/$ODIN_ASSET"
+          curl -fsSL --retry 3 -o "$archive" "https://github.com/odin-lang/Odin/releases/download/$ODIN_RELEASE/$ODIN_ASSET"
+          if command -v sha256sum >/dev/null; then
+            echo "$ODIN_SHA256  $archive" | sha256sum -c -
+          else
+            echo "$ODIN_SHA256  $archive" | shasum -a 256 -c -
+          fi
+          mkdir -p "$RUNNER_TEMP/odin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/odin" --strip-components=1
+          echo "$RUNNER_TEMP/odin" >>"$GITHUB_PATH"
+      - name: Install Odin (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ODIN_ASSET: ${{ matrix.odin }}
+          ODIN_SHA256: ${{ matrix.odin-sha256 }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = Join-Path $env:RUNNER_TEMP $env:ODIN_ASSET
+          curl.exe -fsSL --retry 3 -o $archive "https://github.com/odin-lang/Odin/releases/download/$env:ODIN_RELEASE/$env:ODIN_ASSET"
+          $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne $env:ODIN_SHA256) { throw "$env:ODIN_ASSET has SHA-256 $sha, not $env:ODIN_SHA256" }
+          # The archive holds one folder, dist.
+          & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $env:RUNNER_TEMP
+          Join-Path $env:RUNNER_TEMP 'dist' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - run: odin version
+
+      # The Makefile builds with the version from plugin.json, which the
+      # version job has matched against the tag, and -microarch:x86-64-v2 on
+      # x86_64 only.
+      - name: Test
+        if: runner.os != 'Windows'
+        run: make test
+      - name: Build
+        if: runner.os != 'Windows'
+        run: |
+          make build
+          mkdir -p dist
+          cp skills/prose/bin/prose-check "dist/$ASSET"
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          odin test tests -vet -o:speed -microarch:x86-64-v2 -define:ODIN_TEST_RANDOM_SEED=1 -define:ODIN_TEST_TRACK_MEMORY=true -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true -define:ODIN_TEST_FANCY=false
+          pwsh -NoProfile -NonInteractive -File tests/install_test.ps1
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          odin build src "-out:dist/$env:ASSET" -vet -o:speed -microarch:x86-64-v2 "-define:PROSE_VERSION=$env:VERSION"
+
+      # What both installers ask of an installed binary.
+      - name: The binary runs and names the version
+        shell: bash
+        run: |
+          got=$("./dist/$ASSET" --version)
+          if [ "$got" != "prose-check $VERSION" ]; then
+            echo "::error::$ASSET --version printed '$got', not 'prose-check $VERSION'"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: prose-check-*
+          path: assets
+          merge-multiple: true
+      - name: Write SHA256SUMS
+        working-directory: assets
+        run: |
+          # Bare names, one "<sha256>  <name>" line each; a missing binary
+          # fails here.
+          sha256sum prose-check-linux-x86_64 prose-check-linux-arm64 \
+            prose-check-macos-arm64 prose-check-windows-x86_64.exe >SHA256SUMS
+          cat SHA256SUMS
+      - name: Create the release
+        working-directory: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "prose $VERSION" --generate-notes \
+            prose-check-linux-x86_64 prose-check-linux-arm64 prose-check-macos-arm64 \
+            prose-check-windows-x86_64.exe SHA256SUMS
