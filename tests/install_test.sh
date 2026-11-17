@@ -92,6 +92,20 @@ for t in sh sed awk tr mktemp mkdir rm mv chmod curl kill cat dirname sleep head
 done
 cp "$fake/uname" "$bare/uname"
 
+# A stand-in for BSD env, which has no --default-signal: it rejects that
+# option and passes everything else to the real env.
+real_env=$(command -v env)
+bsdenv="$work/bsdenv"
+mkdir -p "$bsdenv"
+cat >"$bsdenv/env" <<ENVEOF
+#!/bin/sh
+case \${1:-} in
+--default-signal*) echo "env: illegal option -- -" >&2; exit 1 ;;
+esac
+exec "$real_env" "\$@"
+ENVEOF
+chmod 755 "$bsdenv/env"
+
 real_sha=$(command -v sha256sum)
 
 # ---- one run of the script --------------------------------------------------
@@ -123,6 +137,56 @@ run_with_path() { # ROOT PATH [ARGS...]
 }
 
 mtime_text() { find "$1" -prune -exec ls -ld {} + | awk '{print $6, $7, $8}'; }
+
+# signal_checks ROOT BIN [ENVDIR]: starts the script with a curl that hangs, sends
+# each signal, and checks that bin/ is left empty. ENVDIR is put first on PATH,
+# so a fake env there stands in for BSD's.
+#
+# A background job of a non-interactive shell starts with SIGINT ignored, and a
+# signal ignored at start cannot be trapped, so INT needs
+# `env --default-signal=INT`, which GNU env has and BSD env lacks. INT is
+# tested only when the probe finds that env option; the others always are.
+signal_checks() {
+	sc_root=$1
+	sc_bin=$2
+	sc_path="${3:+$3:}$slowfake:$fake:$PATH"
+	sigs="TERM HUP"
+	use_env=0
+	if PATH="$sc_path" env --default-signal=INT true 2>/dev/null; then
+		sigs="TERM INT HUP"
+		use_env=1
+	fi
+	for sig in $sigs; do
+		setup_root "$sc_root"
+		mkdir -p "$sc_bin"
+		if [ "$use_env" -eq 1 ]; then
+			(PATH="$sc_path" HOME="$sc_root/home" exec env --default-signal=INT "$test_sh" "$sc_root/skills/prose/install" >"$work/sig.out" 2>&1) &
+		else
+			(PATH="$sc_path" HOME="$sc_root/home" exec "$test_sh" "$sc_root/skills/prose/install" >"$work/sig.out" 2>&1) &
+		fi
+		pid=$!
+		n=0
+		while [ -z "$(ls -A "$sc_bin")" ] && [ "$n" -lt 100 ]; do
+			sleep 0.1
+			n=$((n + 1))
+		done
+		check "SIG$sig: the download started before the signal (bin/ had: $(ls -A "$sc_bin"))" [ -n "$(ls -A "$sc_bin")" ]
+		kill -s "$sig" "$pid"
+		n=0
+		while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 50 ]; do
+			sleep 0.1
+			n=$((n + 1))
+		done
+		if kill -0 "$pid" 2>/dev/null; then
+			kill -9 "$pid"
+			bad "SIG$sig: the script did not stop"
+		fi
+		wait "$pid"
+		rc=$?
+		check "SIG$sig: exits non-zero (got $rc)" [ "$rc" -ne 0 ]
+		check "SIG$sig: bin/ left empty (got: $(ls -A "$sc_bin"))" bin_empty "$sc_bin"
+	done
+}
 
 suite_run() {
 	suite=$1
@@ -338,37 +402,11 @@ EOF
 	check "unknown option: exit 2 (got $rc)" [ "$rc" -eq 2 ]
 	check "unknown option: names it (got: $out)" contains "$out" "--bogus"
 
-	# 12. a signal during a download removes the temp file
-	# A background job of a non-interactive shell starts with SIGINT ignored,
-	# and a signal ignored at start cannot be trapped, so INT needs
-	# `env --default-signal`, which GNU env has and BSD env lacks.
-	sigs="TERM HUP"
-	if env --default-signal=INT true 2>/dev/null; then sigs="TERM INT HUP"; fi
-	for sig in $sigs; do
-		setup_root "$root"
-		mkdir -p "$bin"
-		(PATH="$slowfake:$fake:$PATH" HOME="$root/home" exec env --default-signal=INT "$test_sh" "$root/skills/prose/install" >"$work/sig.out" 2>&1) &
-		pid=$!
-		n=0
-		while [ -z "$(ls -A "$bin")" ] && [ "$n" -lt 100 ]; do
-			sleep 0.1
-			n=$((n + 1))
-		done
-		kill -s "$sig" "$pid"
-		n=0
-		while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 50 ]; do
-			sleep 0.1
-			n=$((n + 1))
-		done
-		if kill -0 "$pid" 2>/dev/null; then
-			kill -9 "$pid"
-			bad "SIG$sig: the script did not stop"
-		fi
-		wait "$pid"
-		rc=$?
-		check "SIG$sig: exits non-zero (got $rc)" [ "$rc" -ne 0 ]
-		check "SIG$sig: bin/ left empty (got: $(ls -A "$bin"))" bin_empty "$bin"
-	done
+	# 12. a signal during a download removes the temp file. The block runs
+	# twice: with the real env, and with a stand-in for a BSD env that rejects
+	# --default-signal, so the TERM and HUP checks are proven to work there.
+	signal_checks "$root" "$bin"
+	signal_checks "$root" "$bin" "$bsdenv"
 
 	# 13. several installs at once all succeed and leave one good binary
 	setup_root "$root"
