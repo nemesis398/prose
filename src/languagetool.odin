@@ -315,8 +315,10 @@ check_chunk :: proc(
 	defer json.destroy_value(res, allocator)
 	defer delete(why, allocator)
 	matches, is_list := jv_field(res, "matches").(json.Array)
-	if why == "" && jv_field(res, "matches") != nil && !is_list {
-		why = strings.clone("the answer's matches are not a list", allocator)
+	if why == "" && !is_list {
+		// A missing list is as bad as a wrong one: an answer without matches
+		// is not an answer to a check, and would read as a clean chunk.
+		why = strings.clone("the answer has no matches list", allocator)
 	}
 	if why != "" {
 		// A dropped chunk means part of the document went unchecked. As a
@@ -589,9 +591,15 @@ probe :: proc(backend: Backend, timing: Lt_Timing, allocator := context.allocato
 	if why != "" {
 		return false, why
 	}
-	n := 0
-	if list, is_list := jv_field(res, "matches").(json.Array); is_list {
-		n = len(list)
+	list, is_list := jv_field(res, "matches").(json.Array)
+	if !is_list {
+		return false, strings.clone("the answer has no matches list", allocator)
+	}
+	n := len(list)
+	if n == 0 {
+		// LanguageTool always flags the probe sentence, so an empty list means
+		// the server is not checking.
+		return false, strings.clone("the answer has no matches on the probe sentence, so the server is not checking", allocator)
 	}
 	software := jv_field(res, "software")
 	tier := "free rules only" if jv_truthy(jv_field(software, "premiumHint")) else "premium rules active"

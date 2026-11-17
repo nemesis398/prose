@@ -70,6 +70,15 @@ Fake_Mode :: enum {
 	// Replay, except that the second distinct check request (one with a
 	// `data` field) and every retry of it get 500.
 	Fail_Second_Chunk,
+	// Answer every POST with 200 and `{"status":"ok"}`: JSON, but no
+	// `matches` list, as a proxy or a wrong service in front of the port does.
+	No_Matches,
+	// Answer every POST with 200 and `{"matches":[]}`: a server that finds
+	// nothing in any text, not even the probe sentence.
+	Empty_Matches,
+	// Replay for the probe, then 200 and `{"status":"ok"}` for every check
+	// request (one with a `data` field).
+	No_Matches_After_Probe,
 }
 
 Fake_Lt :: struct {
@@ -270,6 +279,21 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 		return
 	}
 	defer delete(key)
+
+	switch fake.mode {
+	case .No_Matches:
+		send_response(client, 200, "application/json", `{"status":"ok"}`)
+		return
+	case .Empty_Matches:
+		send_response(client, 200, "application/json", `{"matches":[]}`)
+		return
+	case .No_Matches_After_Probe:
+		if "data" in form {
+			send_response(client, 200, "application/json", `{"status":"ok"}`)
+			return
+		}
+	case .Replay, .Refuse_403, .Hang, .Fail_Second_Chunk:
+	}
 
 	if fake.mode == .Fail_Second_Chunk && "data" in form {
 		known := false

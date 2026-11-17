@@ -342,6 +342,64 @@ a_refusing_backend_stops_the_check :: proc(t: ^testing.T) {
 	testing.expect_value(t, fake_lt_requests(fake), 1)
 }
 
+// A server that answers 200 and JSON but no matches list, or an empty one
+// for the probe sentence, is not checking: the probe fails, so no text is
+// reported clean that was never looked at.
+@(test)
+a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
+	for mode in ([]Fake_Mode{.No_Matches, .Empty_Matches}) {
+		fake, port := fake_lt_start(RECORDINGS, mode)
+		defer fake_lt_stop(fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		backend := server_backend(port)
+		defer delete(backend.url)
+		md := read_corpus("fixture.md")
+		defer delete(md)
+		result, err := prose.check_text(md, {lang = "auto", use_lt = true, backend = backend})
+		defer prose.file_result_destroy(&result)
+		defer delete(err.message)
+		testing.expectf(t, err.message != "", "%v: the probe passed, note %q", mode, result.note)
+		testing.expectf(t, strings.has_prefix(err.message, "self-hosted ("), "%v: error %q", mode, err.message)
+		testing.expectf(t, strings.contains(err.message, "matches"), "%v: error %q", mode, err.message)
+		testing.expect_value(t, result.note, "")
+		testing.expect_value(t, len(result.findings), 0)
+		testing.expect_value(t, fake_lt_requests(fake), 1)
+	}
+}
+
+// A check answer without a matches list, after a good probe, is a failed
+// chunk, never a clean one.
+@(test)
+a_chunk_answer_without_matches_is_a_failed_chunk :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .No_Matches_After_Probe)
+	defer fake_lt_stop(fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	backend := server_backend(port)
+	defer delete(backend.url)
+	md := read_corpus("fixture.md")
+	defer delete(md)
+	timing := prose.LT_TIMING
+	timing.retry_pause_ms = 10
+	result, err := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	testing.expect_value(t, err.message, "")
+	testing.expectf(t, strings.contains(result.note, " | chunk failed: the answer has no matches list"), "note %q", result.note)
+	failed := 0
+	for f in result.findings {
+		if f.rule == "LT-CHUNK-FAILED" {
+			failed += 1
+			testing.expect_value(t, f.severity, prose.Severity.Error)
+			testing.expectf(t, strings.contains(f.message, "the answer has no matches list"), "%s", f.message)
+		}
+	}
+	testing.expectf(t, failed > 0, "no LT-CHUNK-FAILED finding")
+}
+
 // A backend that never answers: the probe gives up after its timeout, is
 // retried as the reference retries, and the check stops naming the backend.
 @(test)

@@ -600,6 +600,48 @@ a_server_backend_gives_the_golden_lt_output :: proc(t: ^testing.T) {
 	testing.expect_value(t, x.code, 1)
 }
 
+// A server that answers JSON without matches is not checking. The probe
+// fails and the run is exit 2, with nothing reported clean; --selftest FAILs
+// it too. After a good probe, a check answer without matches is a failed
+// chunk: exit 1 and LT-CHUNK-FAILED in the JSON.
+@(test)
+a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
+	path := CORPUS + "fixture.md"
+	for mode in ([]Fake_Mode{.No_Matches, .Empty_Matches}) {
+		fake, port := fake_lt_start(RECORDINGS, mode)
+		defer fake_lt_stop(fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		url := fmt.aprintf("http://127.0.0.1:%d", port)
+		defer delete(url)
+		env := prose.Run_Env{lt = {server = url}, skill_dir = SKILL}
+
+		c := cli({path}, env)
+		defer cli_done(&c)
+		testing.expectf(t, c.code == 2, "%v: exit %d, out %q", mode, c.code, c.out)
+		testing.expectf(t, strings.contains(c.err, "self-hosted"), "%v: stderr %q", mode, c.err)
+		testing.expect_value(t, c.out, "")
+
+		s := cli({"--selftest"}, env)
+		defer cli_done(&s)
+		testing.expectf(t, s.code == 2, "%v: selftest exit %d", mode, s.code)
+		testing.expectf(t, strings.contains(s.out, "FAIL  self-hosted"), "%v: %s", mode, s.out)
+	}
+
+	fake, port := fake_lt_start(RECORDINGS, .No_Matches_After_Probe)
+	defer fake_lt_stop(fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d", port)
+	defer delete(url)
+	c := cli({"--json", path}, prose.Run_Env{lt = {server = url}, skill_dir = SKILL})
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 1)
+	testing.expect(t, strings.contains(c.out, `"rule": "LT-CHUNK-FAILED"`), c.out)
+}
+
 // Review Focus 3: an empty file and one that is only a code block find
 // nothing, exit 0, and send no request at all; their JSON is the (hand
 // corrected) golden-lt file.
