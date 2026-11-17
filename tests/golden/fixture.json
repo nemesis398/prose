@@ -1,0 +1,224 @@
+[
+  {
+    "file": "fixture.md",
+    "note": "language: de, en",
+    "findings": [
+      {
+        "line": 9,
+        "col": 32,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in German prose. This character is never correct here.",
+        "excerpt": "Das Analytics-Tool läuft lokal — das ist ein Geviertstrich und mus…",
+        "suggestion": "replace with a spaced en dash: –"
+      },
+      {
+        "line": 10,
+        "col": 29,
+        "severity": "warning",
+        "rule": "EN-DASH-BUDGET",
+        "message": "3 spaced en dashes in 277 German words. Budget is 1, one per 200. Each one is correct German, but at this density the Gedankenstrich stops being a device and becomes the default rhythm. Densest: line 9 (3×).",
+        "excerpt": "Entscheidung fiel auf Umami – selbst gehostet, weil kein AVV nö…",
+        "suggestion": "rewrite about 2 of them as commas, colons or sentence breaks"
+      },
+      {
+        "line": 12,
+        "col": 23,
+        "severity": "error",
+        "rule": "DE-UNIT-SPACE",
+        "message": "German typography puts a space between number and unit: 0 %.",
+        "excerpt": "null. Wir haben rund 40% der Zugriffe verloren, weil Werbe…",
+        "suggestion": "0 %"
+      },
+      {
+        "line": 13,
+        "col": 16,
+        "severity": "warning",
+        "rule": "DE-THOUSANDS",
+        "message": "Looks like an English thousands separator in German text. German writes 5.000, not 5,000.",
+        "excerpt": "Datenbank hält 5,000 Zeilen und belegt 1.5 GB auf der…",
+        "suggestion": "5.000"
+      },
+      {
+        "line": 13,
+        "col": 40,
+        "severity": "warning",
+        "rule": "DE-DECIMAL",
+        "message": "Decimal point in German text. German uses the comma: 3,5.",
+        "excerpt": "…bank hält 5,000 Zeilen und belegt 1.5 GB auf der Platte. Das gilt z.B. für",
+        "suggestion": "1,5"
+      },
+      {
+        "line": 13,
+        "col": 72,
+        "severity": "warning",
+        "rule": "DE-ABBREV-SPACE",
+        "message": "DIN 5008 spaces multi-part abbreviations: z. B.",
+        "excerpt": "…t 1.5 GB auf der Platte. Das gilt z.B. für",
+        "suggestion": "z. B."
+      },
+      {
+        "line": 15,
+        "col": 42,
+        "severity": "warning",
+        "rule": "DE-GLUE",
+        "message": "3 additive connectives in one document. Used this often they stop connecting and start padding.",
+        "excerpt": "…n wir kein zusätzliches Personal. Des Weiteren bleibt der Betrieb",
+        "suggestion": "drop it, or replace with a real logical link"
+      },
+      {
+        "line": 16,
+        "col": 49,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“Es ist wichtig zu beachten” reads as machine prose. Vorgeplänkel. Die Tatsache reicht.",
+        "excerpt": "…ie Kollegen kommen damit zurecht. Es ist wichtig zu beachten,",
+        "suggestion": ""
+      },
+      {
+        "line": 17,
+        "col": 48,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“nahtlos” reads as machine prose. Leere Verstärkung. Sag, was passiert.",
+        "excerpt": "…ation Zeit kostet. Die Lösung ist nahtlos in den Alltag",
+        "suggestion": ""
+      },
+      {
+        "line": 18,
+        "col": 41,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…ierbar. Wir prüfen das noch einmal , bevor wir umstellen. Der Bereich",
+        "suggestion": ","
+      },
+      {
+        "line": 21,
+        "col": 16,
+        "severity": "warning",
+        "rule": "QUOTE-MIX",
+        "message": "Both typographic quotes (1) and straight quotes (5) in one document. Pick one and hold it.",
+        "excerpt": "wir das geplant\" und meinte damit die zweite \"Phas…",
+        "suggestion": "„…“ for polished German, straight quotes for notes"
+      },
+      {
+        "line": 23,
+        "col": 4,
+        "severity": "warning",
+        "rule": "EMOJI-DUPLICATE",
+        "message": "📊 already labels the heading on line 7. Repeating it stops it working as a landmark.",
+        "excerpt": "## 📊 Englischer Teil",
+        "suggestion": "pick a different, equally literal icon"
+      },
+      {
+        "line": 25,
+        "col": 24,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "The setup runs locally — no data protection agreement need…",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 27,
+        "col": 58,
+        "severity": "error",
+        "rule": "EN-DASH-EN",
+        "message": "Spaced en dash as a sentence interrupter in English prose.",
+        "excerpt": "…ontainer starts in under a second – which is fast enough",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 28,
+        "col": 19,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“When it comes to” reads as machine prose. Filler. Name the subject directly.",
+        "excerpt": "for our purposes. When it comes to storage, the volume sits at 40% c…",
+        "suggestion": ""
+      },
+      {
+        "line": 29,
+        "col": 1,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“Let's dive” reads as machine prose. Signposting the reader does not need.",
+        "excerpt": "Let's dive into the numbers before we go fur…",
+        "suggestion": ""
+      },
+      {
+        "line": 31,
+        "col": 25,
+        "severity": "error",
+        "rule": "EMOJI-POSITION",
+        "message": "Emoji inside a heading but not leading it.",
+        "excerpt": "## Abschnitt ohne Emoji 🎯",
+        "suggestion": "move it to the front: `## ✅ Title`"
+      },
+      {
+        "line": 33,
+        "col": 22,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "📌 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "Dieser Abschnitt hat 📌 ein Emoji mitten im Fließtext, wa…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 36,
+        "col": 11,
+        "severity": "warning",
+        "rule": "EMOJI-COUNT",
+        "message": "2 emoji in one heading. One label reads as a label, two read as decoration.",
+        "excerpt": "### 🚀 Ein 🔥 Titel mit zwei Emoji",
+        "suggestion": "keep the one that names the section"
+      },
+      {
+        "line": 42,
+        "col": 30,
+        "severity": "warning",
+        "rule": "EM-DASH-CELL",
+        "message": "em dash as an empty-cell placeholder. Not prose, but it is still the character we are keeping out of these files.",
+        "excerpt": "| Erste Zeile    | 5 GB    | —    |",
+        "suggestion": "use – or leave the cell empty"
+      },
+      {
+        "line": 43,
+        "col": 30,
+        "severity": "warning",
+        "rule": "EM-DASH-CELL",
+        "message": "em dash as an empty-cell placeholder. Not prose, but it is still the character we are keeping out of these files.",
+        "excerpt": "| Zweite Zeile   | 12 GB   | —    |",
+        "suggestion": "use – or leave the cell empty"
+      },
+      {
+        "line": 45,
+        "col": 4,
+        "severity": "warning",
+        "rule": "EMOJI-DUPLICATE",
+        "message": "🧪 already labels the heading on line 5. Repeating it stops it working as a landmark.",
+        "excerpt": "## 🧪 Wiederholtes Emoji",
+        "suggestion": "pick a different, equally literal icon"
+      },
+      {
+        "line": 51,
+        "col": 3,
+        "severity": "note",
+        "rule": "EMOJI-LEGEND",
+        "message": "🚌 appears 3× in body text, so it reads as a legend rather than decoration. Left alone.",
+        "excerpt": "- 🚌 Unterwegs hören oder lesen, ohne…",
+        "suggestion": "no action unless you meant it as decoration"
+      },
+      {
+        "line": 52,
+        "col": 3,
+        "severity": "note",
+        "rule": "EMOJI-LEGEND",
+        "message": "🖥️ appears 3× in body text, so it reads as a legend rather than decoration. Left alone.",
+        "excerpt": "- 🖥️ Am Rechner, praktische Übung im L…",
+        "suggestion": "no action unless you meant it as decoration"
+      }
+    ]
+  }
+]

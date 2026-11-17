@@ -1,0 +1,296 @@
+[
+  {
+    "file": "en-readme.md",
+    "note": "language: en | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.9-SNAPSHOT, premium rules active",
+    "findings": [
+      {
+        "line": 3,
+        "col": 41,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "…log is a small log viewer for the terminal — fast, local and free.",
+        "suggestion": "terminal—fast, local,"
+      },
+      {
+        "line": 3,
+        "col": 50,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…small log viewer for the terminal — fast, local and free.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 4,
+        "col": 1,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's not just” reads as machine prose. Antithesis padding. State the thing you mean.",
+        "excerpt": "It's not just a pager, it is a full search tool…",
+        "suggestion": ""
+      },
+      {
+        "line": 4,
+        "col": 17,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "It's not just a pager, it is a full search tool. It's wo…",
+        "suggestion": "pager;"
+      },
+      {
+        "line": 4,
+        "col": 50,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…pager, it is a full search tool. It's worth noting that the",
+        "suggestion": ""
+      },
+      {
+        "line": 5,
+        "col": 25,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "index lives in a single file – which keeps backups simple. When it com…",
+        "suggestion": "file—which"
+      },
+      {
+        "line": 5,
+        "col": 30,
+        "severity": "error",
+        "rule": "EN-DASH-EN",
+        "message": "Spaced en dash as a sentence interrupter in English prose.",
+        "excerpt": "index lives in a single file – which keeps backups simple. When…",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 5,
+        "col": 60,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“When it comes to” reads as machine prose. Filler. Name the subject directly.",
+        "excerpt": "…ile – which keeps backups simple. When it comes to",
+        "suggestion": ""
+      },
+      {
+        "line": 6,
+        "col": 60,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“Let's dive” reads as machine prose. Signposting the reader does not need.",
+        "excerpt": "…out 40% of a gigabyte per second. Let's dive into the",
+        "suggestion": ""
+      },
+      {
+        "line": 24,
+        "col": 38,
+        "severity": "warning",
+        "rule": "EM-DASH-CELL",
+        "message": "em dash as an empty-cell placeholder. Not prose, but it is still the character we are keeping out of these files.",
+        "excerpt": "…--dir`   | Directory to watch   | —       |",
+        "suggestion": "use – or leave the cell empty"
+      },
+      {
+        "line": 26,
+        "col": 38,
+        "severity": "warning",
+        "rule": "EM-DASH-CELL",
+        "message": "em dash as an empty-cell placeholder. Not prose, but it is still the character we are keeping out of these files.",
+        "excerpt": "…--quiet` | Hide the banner      | —       |",
+        "suggestion": "use – or leave the cell empty"
+      },
+      {
+        "line": 28,
+        "col": 11,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“plays a crucial role” reads as machine prose. Says nothing. Name the role.",
+        "excerpt": "Marrowlog plays a crucial role in our stack, and it integrates s…",
+        "suggestion": ""
+      },
+      {
+        "line": 28,
+        "col": 64,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamlessly” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…e in our stack, and it integrates seamlessly with",
+        "suggestion": ""
+      },
+      {
+        "line": 29,
+        "col": 10,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“At the end of the day” reads as machine prose. Cliche.",
+        "excerpt": "systemd. At the end of the day, this is a game-changer for small…",
+        "suggestion": ""
+      },
+      {
+        "line": 29,
+        "col": 43,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“game-changer” reads as machine prose. Marketing register.",
+        "excerpt": "…At the end of the day, this is a game-changer for small teams.  The",
+        "suggestion": ""
+      },
+      {
+        "line": 29,
+        "col": 72,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "…is a game-changer for small teams.  The",
+        "suggestion": "single space"
+      },
+      {
+        "line": 30,
+        "col": 6,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_8",
+        "message": "Ensure subjects and verbs match",
+        "excerpt": "tool have many options and this are the rea…",
+        "suggestion": "has"
+      },
+      {
+        "line": 30,
+        "col": 16,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "tool have many options and this are the reason why we wr…",
+        "suggestion": "options,"
+      },
+      {
+        "line": 30,
+        "col": 33,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_8",
+        "message": "Ensure subjects and verbs match",
+        "excerpt": "tool have many options and this are the reason why we wrote a short g…",
+        "suggestion": "is"
+      },
+      {
+        "line": 31,
+        "col": 1,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_2",
+        "message": "Make sure you’re using the word you had in mind",
+        "excerpt": "Their are three modes , each with it's…",
+        "suggestion": "There"
+      },
+      {
+        "line": 31,
+        "col": 22,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "Their are three modes , each with it's own flags. In con…",
+        "suggestion": ""
+      },
+      {
+        "line": 31,
+        "col": 22,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "Their are three modes , each with it's own flags. In concl…",
+        "suggestion": ","
+      },
+      {
+        "line": 31,
+        "col": 35,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_17",
+        "message": "Use apostrophes correctly",
+        "excerpt": "Their are three modes , each with it's own flags. In conclusion, try it…",
+        "suggestion": "its"
+      },
+      {
+        "line": 31,
+        "col": 51,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“In conclusion” reads as machine prose. A note does not need a conclusion section.",
+        "excerpt": "…modes , each with it's own flags. In conclusion, try it out.",
+        "suggestion": ""
+      },
+      {
+        "line": 33,
+        "col": 9,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "He said “it works” and then typed \"marrowlog --help\"…",
+        "suggestion": "\"it works\""
+      },
+      {
+        "line": 33,
+        "col": 35,
+        "severity": "warning",
+        "rule": "QUOTE-MIX",
+        "message": "Both typographic quotes (2) and straight quotes (6) in one document. Pick one and hold it.",
+        "excerpt": "He said “it works” and then typed \"marrowlog --help\" and \"marrowlog -…",
+        "suggestion": "„…“ for polished German, straight quotes for notes"
+      },
+      {
+        "line": 33,
+        "col": 48,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "…orks” and then typed \"marrowlog --help\" and \"marrowlog --version\"",
+        "suggestion": "help,\""
+      },
+      {
+        "line": 33,
+        "col": 71,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "…arrowlog --help\" and \"marrowlog --version\"",
+        "suggestion": "version,\""
+      },
+      {
+        "line": 36,
+        "col": 14,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“robust and scalable” reads as machine prose. Paired empty adjectives.",
+        "excerpt": "Marrowlog is robust and scalable and a testament to patient work.…",
+        "suggestion": ""
+      },
+      {
+        "line": 36,
+        "col": 38,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“a testament to” reads as machine prose. Marketing register.",
+        "excerpt": "…rowlog is robust and scalable and a testament to patient work. Delve into the",
+        "suggestion": ""
+      },
+      {
+        "line": 36,
+        "col": 67,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“Delve into” reads as machine prose. Register mismatch with the rest of your notes.",
+        "excerpt": "…and a testament to patient work. Delve into the",
+        "suggestion": ""
+      },
+      {
+        "line": 37,
+        "col": 18,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“harness the power” reads as machine prose. Marketing register.",
+        "excerpt": "source code, and harness the power of the query language.",
+        "suggestion": ""
+      }
+    ]
+  }
+]

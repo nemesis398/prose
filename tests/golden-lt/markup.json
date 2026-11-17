@@ -1,0 +1,62 @@
+[
+  {
+    "file": "markup.md",
+    "note": "language: en | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.9-SNAPSHOT, premium rules active",
+    "findings": [
+      {
+        "line": 11,
+        "col": 51,
+        "severity": "warning",
+        "rule": "LT:MARKDOWN_NNP",
+        "message": "Did you mean the formatting language “Markdown” (= proper noun)?",
+        "excerpt": "….org/angle> in angle brackets. A [markdown link](https://example.org/linkk \"…",
+        "suggestion": "Markdown"
+      },
+      {
+        "line": 39,
+        "col": 30,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_ORTHOGRAPHY_ERROR_IDS_1",
+        "message": "Ensure spelling is correct",
+        "excerpt": "- [ ] open task with a typo: definately",
+        "suggestion": "definitely"
+      },
+      {
+        "line": 41,
+        "col": 18,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_ORTHOGRAPHY_ERROR_IDS_1",
+        "message": "Ensure spelling is correct",
+        "excerpt": "> A quote with a sentense error.",
+        "suggestion": "sentence"
+      },
+      {
+        "line": 43,
+        "col": 32,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_ORTHOGRAPHY_ERROR_IDS_1",
+        "message": "Ensure spelling is correct",
+        "excerpt": "[^1]: The footnote text has an erorr too.",
+        "suggestion": "error"
+      },
+      {
+        "line": 45,
+        "col": 21,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "Final paragraph with   three spaces and a nbsp.",
+        "suggestion": "single space"
+      },
+      {
+        "line": 45,
+        "col": 41,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_11",
+        "message": "Use articles correctly",
+        "excerpt": "…paragraph with   three spaces and a nbsp.",
+        "suggestion": "an"
+      }
+    ]
+  }
+]

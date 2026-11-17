@@ -1,0 +1,53 @@
+[
+  {
+    "file": "mixed.md",
+    "note": "language: de, en | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.9-SNAPSHOT, premium rules active",
+    "findings": [
+      {
+        "line": 19,
+        "col": 10,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_2",
+        "message": "Make sure you’re using the word you had in mind",
+        "excerpt": "planned. Their is also a chance that the vendor…",
+        "suggestion": "There"
+      },
+      {
+        "line": 24,
+        "col": 22,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_UNNECESSARY_ORTHOGRAPHY_SPACE",
+        "message": "Entferne ein Leerzeichen",
+        "excerpt": "Wir prüfen die Rechte , sichern die Datenbank und schrei…",
+        "suggestion": ""
+      },
+      {
+        "line": 24,
+        "col": 22,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "Wir prüfen die Rechte , sichern die Datenbank und schreibe…",
+        "suggestion": ","
+      },
+      {
+        "line": 25,
+        "col": 48,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“es ist wichtig zu beachten” reads as machine prose. Vorgeplänkel. Die Tatsache reicht.",
+        "excerpt": "…gen. Das dauert nicht lange, aber es ist wichtig zu beachten, dass",
+        "suggestion": ""
+      },
+      {
+        "line": 25,
+        "col": 55,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_MISSING_PUNCTUATION_COMMA",
+        "message": "Ergänze ein Satzzeichen",
+        "excerpt": "…s dauert nicht lange, aber es ist wichtig zu beachten, dass",
+        "suggestion": "wichtig,"
+      }
+    ]
+  }
+]

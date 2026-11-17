@@ -1,0 +1,26 @@
+[
+  {
+    "file": "mixed.md",
+    "note": "language: de, en",
+    "findings": [
+      {
+        "line": 24,
+        "col": 22,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "Wir prüfen die Rechte , sichern die Datenbank und schreibe…",
+        "suggestion": ","
+      },
+      {
+        "line": 25,
+        "col": 48,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“es ist wichtig zu beachten” reads as machine prose. Vorgeplänkel. Die Tatsache reicht.",
+        "excerpt": "…gen. Das dauert nicht lange, aber es ist wichtig zu beachten, dass",
+        "suggestion": ""
+      }
+    ]
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "file": "markup.md",
+    "note": "language: en",
+    "findings": [
+      {
+        "line": 45,
+        "col": 21,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "Final paragraph with   three spaces and a nbsp.",
+        "suggestion": "single space"
+      }
+    ]
+  }
+]

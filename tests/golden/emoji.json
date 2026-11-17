@@ -1,0 +1,98 @@
+[
+  {
+    "file": "emoji.md",
+    "note": "language: en",
+    "findings": [
+      {
+        "line": 7,
+        "col": 4,
+        "severity": "warning",
+        "rule": "EMOJI-DUPLICATE",
+        "message": "📦 already labels the heading on line 3. Repeating it stops it working as a landmark.",
+        "excerpt": "## 📦 More Deliveries",
+        "suggestion": "pick a different, equally literal icon"
+      },
+      {
+        "line": 11,
+        "col": 18,
+        "severity": "error",
+        "rule": "EMOJI-POSITION",
+        "message": "Emoji inside a heading but not leading it.",
+        "excerpt": "## Third Section 🎯",
+        "suggestion": "move it to the front: `## ✅ Title`"
+      },
+      {
+        "line": 15,
+        "col": 10,
+        "severity": "warning",
+        "rule": "EMOJI-COUNT",
+        "message": "2 emoji in one heading. One label reads as a label, two read as decoration.",
+        "excerpt": "## 🔥 Hot 🧊 Cold",
+        "suggestion": "keep the one that names the section"
+      },
+      {
+        "line": 19,
+        "col": 8,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "👨‍👩‍👧 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "Family 👨‍👩‍👧 visits on Sundays and they bring…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 19,
+        "col": 73,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "🇩🇪 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "…y bring there own bread. The flag 🇩🇪 hangs",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 20,
+        "col": 31,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "🏳️‍🌈 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "by the door and the other one 🏳️‍🌈 hangs in the window, wich looks n…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 22,
+        "col": 18,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "✨ outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "A single sparkle ✨ sits in the middle of this senten…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 24,
+        "col": 29,
+        "severity": "note",
+        "rule": "EMOJI-LEGEND",
+        "message": "🌾 appears 4× in body text, so it reads as a legend rather than decoration. Left alone.",
+        "excerpt": "Legend for the shelf cards: 🌾 whole grain, 🌾 rye, 🌾 spelt. The…",
+        "suggestion": "no action unless you meant it as decoration"
+      },
+      {
+        "line": 25,
+        "col": 56,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "🔴 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "…e so it is a legend. The red mark 🔴 appears once here,",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 28,
+        "col": 19,
+        "severity": "note",
+        "rule": "EMOJI-LEGEND",
+        "message": "📦 also labels a heading here, so it reads as a pointer to that section. Left alone.",
+        "excerpt": "The heading label 📦 also appears in the text of a par…",
+        "suggestion": "no action unless you meant it as decoration"
+      }
+    ]
+  }
+]

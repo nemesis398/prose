@@ -1,0 +1,197 @@
+[
+  {
+    "file": "emoji.md",
+    "note": "language: en | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.9-SNAPSHOT, premium rules active",
+    "findings": [
+      {
+        "line": 5,
+        "col": 23,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "The truck arrived at six and we unloaded the flour sacks be…",
+        "suggestion": "six,"
+      },
+      {
+        "line": 5,
+        "col": 58,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_7",
+        "message": "Use prepositions correctly",
+        "excerpt": "…x and we unloaded the flour sacks befor breakfast.",
+        "suggestion": "before"
+      },
+      {
+        "line": 7,
+        "col": 4,
+        "severity": "warning",
+        "rule": "EMOJI-DUPLICATE",
+        "message": "📦 already labels the heading on line 3. Repeating it stops it working as a landmark.",
+        "excerpt": "## 📦 More Deliveries",
+        "suggestion": "pick a different, equally literal icon"
+      },
+      {
+        "line": 9,
+        "col": 46,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "…uck brought the yeast, and it was acceptible quality.",
+        "suggestion": "acceptably"
+      },
+      {
+        "line": 11,
+        "col": 18,
+        "severity": "error",
+        "rule": "EMOJI-POSITION",
+        "message": "Emoji inside a heading but not leading it.",
+        "excerpt": "## Third Section 🎯",
+        "suggestion": "move it to the front: `## ✅ Title`"
+      },
+      {
+        "line": 15,
+        "col": 10,
+        "severity": "warning",
+        "rule": "EMOJI-COUNT",
+        "message": "2 emoji in one heading. One label reads as a label, two read as decoration.",
+        "excerpt": "## 🔥 Hot 🧊 Cold",
+        "suggestion": "keep the one that names the section"
+      },
+      {
+        "line": 19,
+        "col": 1,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_11",
+        "message": "Use articles correctly",
+        "excerpt": "Family 👨‍👩‍👧 visits on Sundays and they…",
+        "suggestion": "The family"
+      },
+      {
+        "line": 19,
+        "col": 8,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "👨‍👩‍👧 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "Family 👨‍👩‍👧 visits on Sundays and they bring…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 19,
+        "col": 27,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "Family 👨‍👩‍👧 visits on Sundays and they bring there own bread. The…",
+        "suggestion": "Sundays,"
+      },
+      {
+        "line": 19,
+        "col": 49,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "…isits on Sundays and they bring there own bread. The flag 🇩🇪 hangs",
+        "suggestion": "their"
+      },
+      {
+        "line": 19,
+        "col": 73,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "🇩🇪 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "…y bring there own bread. The flag 🇩🇪 hangs",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 20,
+        "col": 10,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "by the door and the other one 🏳️‍🌈 hangs in the…",
+        "suggestion": "door,"
+      },
+      {
+        "line": 20,
+        "col": 31,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "🏳️‍🌈 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "by the door and the other one 🏳️‍🌈 hangs in the window, wich looks n…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 20,
+        "col": 59,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "…r one 🏳️‍🌈 hangs in the window, wich looks nice.",
+        "suggestion": "which"
+      },
+      {
+        "line": 22,
+        "col": 18,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "✨ outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "A single sparkle ✨ sits in the middle of this senten…",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 22,
+        "col": 61,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER_ERROR_IDS_11",
+        "message": "Use articles correctly",
+        "excerpt": "…the middle of this sentence, and a teh typo follows.",
+        "suggestion": "the"
+      },
+      {
+        "line": 24,
+        "col": 29,
+        "severity": "note",
+        "rule": "EMOJI-LEGEND",
+        "message": "🌾 appears 4× in body text, so it reads as a legend rather than decoration. Left alone.",
+        "excerpt": "Legend for the shelf cards: 🌾 whole grain, 🌾 rye, 🌾 spelt. The…",
+        "suggestion": "no action unless you meant it as decoration"
+      },
+      {
+        "line": 25,
+        "col": 20,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN_OTHER",
+        "message": "There might be a mistake here",
+        "excerpt": "appears more than once so it is a legend. The red mark 🔴…",
+        "suggestion": "once,"
+      },
+      {
+        "line": 25,
+        "col": 56,
+        "severity": "warning",
+        "rule": "EMOJI-BODY",
+        "message": "🔴 outside a heading. Emoji label sections here, they are not inline punctuation.",
+        "excerpt": "…e so it is a legend. The red mark 🔴 appears once here,",
+        "suggestion": "move it to the nearest heading, or drop it"
+      },
+      {
+        "line": 26,
+        "col": 11,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_EN",
+        "message": "There might be a mistake here",
+        "excerpt": "and this sentense has a mistake.",
+        "suggestion": "sentence"
+      },
+      {
+        "line": 28,
+        "col": 19,
+        "severity": "note",
+        "rule": "EMOJI-LEGEND",
+        "message": "📦 also labels a heading here, so it reads as a pointer to that section. Left alone.",
+        "excerpt": "The heading label 📦 also appears in the text of a par…",
+        "suggestion": "no action unless you meant it as decoration"
+      }
+    ]
+  }
+]

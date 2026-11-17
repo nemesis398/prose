@@ -1,0 +1,368 @@
+[
+  {
+    "file": "de-note.md",
+    "note": "language: de | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.9-SNAPSHOT, premium rules active",
+    "findings": [
+      {
+        "line": 3,
+        "col": 54,
+        "severity": "warning",
+        "rule": "EN-DASH-BUDGET",
+        "message": "3 spaced en dashes in 201 German words. Budget is 1, one per 200. Each one is correct German, but at this density the Gedankenstrich stops being a device and becomes the default rhythm. Densest: line 3 (3×).",
+        "excerpt": "…ktplatz plant ein neues Sortiment – darüber haben wir heute",
+        "suggestion": "rewrite about 2 of them as commas, colons or sentence breaks"
+      },
+      {
+        "line": 5,
+        "col": 70,
+        "severity": "warning",
+        "rule": "LT:BRAUCHEN_BENÖTIGEN",
+        "message": "Das Verb „benötigt“ ist in vielen Kontexten förmlicher",
+        "excerpt": "…en. Der Ofen läuft seit 6 Uhr und braucht",
+        "suggestion": "benötigt"
+      },
+      {
+        "line": 6,
+        "col": 8,
+        "severity": "error",
+        "rule": "DE-UNIT-SPACE",
+        "message": "German typography puts a space between number and unit: 0 °C.",
+        "excerpt": "rund 250°C, damit die Brötchen knusprig werd…",
+        "suggestion": "0 °C"
+      },
+      {
+        "line": 6,
+        "col": 65,
+        "severity": "warning",
+        "rule": "DE-THOUSANDS",
+        "message": "Looks like an English thousands separator in German text. German writes 5.000, not 5,000.",
+        "excerpt": "…knusprig werden. Das Mehl kostet 1,200 Euro pro",
+        "suggestion": "1.200"
+      },
+      {
+        "line": 6,
+        "col": 67,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_OTHER",
+        "message": "Passe das Symbol an",
+        "excerpt": "…nusprig werden. Das Mehl kostet 1,200 Euro pro",
+        "suggestion": "20"
+      },
+      {
+        "line": 6,
+        "col": 71,
+        "severity": "warning",
+        "rule": "LT:ZIFFER_SYMBOL",
+        "message": "Laut DIN 5008 wird im Schriftverkehr empfohlen, bei Ziffern das Währungssymbol oder die Abkürzung ‚EUR‘ zu verwenden",
+        "excerpt": "…rig werden. Das Mehl kostet 1,200 Euro pro",
+        "suggestion": "€, EUR"
+      },
+      {
+        "line": 7,
+        "col": 18,
+        "severity": "error",
+        "rule": "DE-UNIT-SPACE",
+        "message": "German typography puts a space between number and unit: 5 kg.",
+        "excerpt": "Tonne und wiegt 25kg pro Sack. Ein Laib hat 0.8 kg und…",
+        "suggestion": "5 kg"
+      },
+      {
+        "line": 7,
+        "col": 45,
+        "severity": "warning",
+        "rule": "DE-DECIMAL",
+        "message": "Decimal point in German text. German uses the comma: 3,5.",
+        "excerpt": "…wiegt 25kg pro Sack. Ein Laib hat 0.8 kg und kostet 3.5 EUR. Das",
+        "suggestion": "0,8"
+      },
+      {
+        "line": 7,
+        "col": 46,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE",
+        "message": "Hier könnte ein Fehler sein",
+        "excerpt": "…iegt 25kg pro Sack. Ein Laib hat 0.8 kg und kostet 3.5 EUR. Das",
+        "suggestion": ",8 kg"
+      },
+      {
+        "line": 7,
+        "col": 63,
+        "severity": "warning",
+        "rule": "DE-DECIMAL",
+        "message": "Decimal point in German text. German uses the comma: 3,5.",
+        "excerpt": "…k. Ein Laib hat 0.8 kg und kostet 3.5 EUR. Das",
+        "suggestion": "3,5"
+      },
+      {
+        "line": 7,
+        "col": 63,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_PUNCTUATION_3PERIOD5_3COMMA5",
+        "message": "Ersetze das Satzzeichen",
+        "excerpt": "…k. Ein Laib hat 0.8 kg und kostet 3.5 EUR. Das",
+        "suggestion": "3,5 EUR."
+      },
+      {
+        "line": 8,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DE-ABBREV-SPACE",
+        "message": "DIN 5008 spaces multi-part abbreviations: z. B.",
+        "excerpt": "gilt z.B. für alle Sorten, d.h. auch für da…",
+        "suggestion": "z. B."
+      },
+      {
+        "line": 8,
+        "col": 6,
+        "severity": "error",
+        "rule": "LT:ABKUERZUNG_LEERZEICHEN",
+        "message": "Innerhalb von Abkürzungen, die aus mehreren Buchstaben bestehen, sollten (außer bei Schriftarten mit fester Breite) in der Regel geschützte Leerzeichen verwendet werden",
+        "excerpt": "gilt z.B. für alle Sorten, d.h. auch für da…",
+        "suggestion": "z. B."
+      },
+      {
+        "line": 8,
+        "col": 28,
+        "severity": "warning",
+        "rule": "DE-ABBREV-SPACE",
+        "message": "DIN 5008 spaces multi-part abbreviations: d. h.",
+        "excerpt": "gilt z.B. für alle Sorten, d.h. auch für das Roggenbrot.",
+        "suggestion": "d. h."
+      },
+      {
+        "line": 8,
+        "col": 28,
+        "severity": "error",
+        "rule": "LT:ABKUERZUNG_LEERZEICHEN",
+        "message": "Innerhalb von Abkürzungen, die aus mehreren Buchstaben bestehen, sollten (außer bei Schriftarten mit fester Breite) in der Regel geschützte Leerzeichen verwendet werden",
+        "excerpt": "gilt z.B. für alle Sorten, d.h. auch für das Roggenbrot.",
+        "suggestion": "d. h."
+      },
+      {
+        "line": 10,
+        "col": 1,
+        "severity": "warning",
+        "rule": "LT:DARUEBER_HINAUS_STYLE",
+        "message": "Der Ausdruck ‚darüber hinaus‘ kommt sehr häufig vor. Möchten Sie ihn durch eine Alternative ersetzen, um Ihren Text individueller zu machen?",
+        "excerpt": "Darüber hinaus brauchen wir zwei neue Regale. De…",
+        "suggestion": "Ferner, Weiterhin, Ebenso"
+      },
+      {
+        "line": 10,
+        "col": 16,
+        "severity": "warning",
+        "rule": "LT:BRAUCHEN_BENÖTIGEN",
+        "message": "Das Verb „benötigen“ ist in vielen Kontexten förmlicher",
+        "excerpt": "Darüber hinaus brauchen wir zwei neue Regale. Des Weitere…",
+        "suggestion": "benötigen"
+      },
+      {
+        "line": 11,
+        "col": 19,
+        "severity": "warning",
+        "rule": "DE-GLUE",
+        "message": "4 additive connectives in one document. Used this often they stop connecting and start padding.",
+        "excerpt": "angepasst werden. Zudem ist die Lieferung verspätet,…",
+        "suggestion": "drop it, or replace with a real logical link"
+      },
+      {
+        "line": 11,
+        "col": 58,
+        "severity": "warning",
+        "rule": "DE-GLUE",
+        "message": "4 additive connectives in one document. Used this often they stop connecting and start padding.",
+        "excerpt": "…ist die Lieferung verspätet, und nicht zuletzt fehlt",
+        "suggestion": "drop it, or replace with a real logical link"
+      },
+      {
+        "line": 12,
+        "col": 17,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“Es ist wichtig zu beachten” reads as machine prose. Vorgeplänkel. Die Tatsache reicht.",
+        "excerpt": "uns ein Fahrer. Es ist wichtig zu beachten, dass die Kasse nur bar nimmt.",
+        "suggestion": ""
+      },
+      {
+        "line": 12,
+        "col": 64,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_CONFUSION_BAR_BARGELD",
+        "message": "Korrigiere den Fehler",
+        "excerpt": "…g zu beachten, dass die Kasse nur bar nimmt.",
+        "suggestion": "Bargeld"
+      },
+      {
+        "line": 14,
+        "col": 1,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_DETERMINER_FORM",
+        "message": "Korrigiere die Wortform",
+        "excerpt": "Der Bäckerei ist klein aber fein und…",
+        "suggestion": "Die"
+      },
+      {
+        "line": 14,
+        "col": 18,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_MISSING_PUNCTUATION_COMMA",
+        "message": "Ergänze ein Satzzeichen",
+        "excerpt": "Der Bäckerei ist klein aber fein und hat ein langen Tres…",
+        "suggestion": "klein,"
+      },
+      {
+        "line": 14,
+        "col": 42,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_DETERMINER_FORM",
+        "message": "Korrigiere die Wortform",
+        "excerpt": "…kerei ist klein aber fein und hat ein langen Tresen. Wir verkaufen ein",
+        "suggestion": "einen"
+      },
+      {
+        "line": 15,
+        "col": 11,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_PRONOUN_FORM_DIE_DAS",
+        "message": "Ersetze ein Wort",
+        "excerpt": "Brötchen, die sehr gut schmecken. Das Brot ist…",
+        "suggestion": "das"
+      },
+      {
+        "line": 15,
+        "col": 15,
+        "severity": "warning",
+        "rule": "LT:SEHR_GUT",
+        "message": "Möglicherweise ist es stilistisch besser, eine genauere Formulierung zu benutzen",
+        "excerpt": "Brötchen, die sehr gut schmecken. Das Brot ist frisch ge…",
+        "suggestion": "hervorragend, perfekt, ausgezeichnet"
+      },
+      {
+        "line": 15,
+        "col": 24,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_VERB_FORM",
+        "message": "Korrigiere das Wort",
+        "excerpt": "Brötchen, die sehr gut schmecken. Das Brot ist frisch gebackene und…",
+        "suggestion": "schmeckt."
+      },
+      {
+        "line": 15,
+        "col": 55,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_VERB_FORM",
+        "message": "Korrigiere das Wort",
+        "excerpt": "…ut schmecken. Das Brot ist frisch gebackene und duftet",
+        "suggestion": "gebacken"
+      },
+      {
+        "line": 16,
+        "col": 20,
+        "severity": "error",
+        "rule": "LT:DE_UNPAIRED_QUOTES",
+        "message": "Zeichen ohne sein Gegenstück: ‚“‘ scheint zu fehlen",
+        "excerpt": "herrlich. Er sagte „es läuft gut\" und lachte laut. Die…",
+        "suggestion": ""
+      },
+      {
+        "line": 16,
+        "col": 30,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_PUNCTUATION_QUOTE_L_DOUBLE_QUOT",
+        "message": "Ersetze das Satzzeichen",
+        "excerpt": "herrlich. Er sagte „es läuft gut\" und lachte laut. Die Kunden komme…",
+        "suggestion": "gut“"
+      },
+      {
+        "line": 17,
+        "col": 7,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "Morgen , weil der Kaffee gut ist. Wir haben…",
+        "suggestion": ","
+      },
+      {
+        "line": 17,
+        "col": 45,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_CONFUSION_DASS_DAS",
+        "message": "Korrigiere den Fehler",
+        "excerpt": "…eil der Kaffee gut ist. Wir haben dass Rezept geändert.",
+        "suggestion": "das"
+      },
+      {
+        "line": 19,
+        "col": 19,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_REPLACEMENT_ORTHOGRAPHY_UPPERCASE",
+        "message": "Passe die Groß- und Kleinschreibung an",
+        "excerpt": "Der Preis lag bei Mittel–hoch  und das Ergebnis war ok. Die Koll…",
+        "suggestion": "mittel–hoch"
+      },
+      {
+        "line": 19,
+        "col": 30,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "Der Preis lag bei Mittel–hoch  und das Ergebnis war ok. Die Kollege…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 19,
+        "col": 53,
+        "severity": "warning",
+        "rule": "LT:OK",
+        "message": "Möchten Sie eine standardsprachliche Formulierung wählen?",
+        "excerpt": "…Mittel–hoch  und das Ergebnis war ok. Die Kollegen sind",
+        "suggestion": "O. K, o. k, okay"
+      },
+      {
+        "line": 20,
+        "col": 5,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "sehr  zufrieden mit der Lage. Zusammenfass…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 20,
+        "col": 6,
+        "severity": "warning",
+        "rule": "LT:QB_NEW_DE_OTHER_ERROR_IDS_UNNECESSARY_ORTHOGRAPHY_SPACE",
+        "message": "Entferne ein Leerzeichen",
+        "excerpt": "sehr  zufrieden mit der Lage. Zusammenfa…",
+        "suggestion": ""
+      },
+      {
+        "line": 20,
+        "col": 31,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“Zusammenfassend lässt sich sagen” reads as machine prose. Wiederholt nur den Absatz davor.",
+        "excerpt": "sehr  zufrieden mit der Lage. Zusammenfassend lässt sich sagen, dass die",
+        "suggestion": ""
+      },
+      {
+        "line": 21,
+        "col": 9,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“nahtlos” reads as machine prose. Leere Verstärkung. Sag, was passiert.",
+        "excerpt": "Sitzung nahtlos verlief und die Zahlen leistungss…",
+        "suggestion": ""
+      },
+      {
+        "line": 21,
+        "col": 40,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“leistungsstark und flexibel” reads as machine prose. Leeres Adjektivpaar.",
+        "excerpt": "…ng nahtlos verlief und die Zahlen leistungsstark und flexibel wirken.",
+        "suggestion": ""
+      }
+    ]
+  }
+]

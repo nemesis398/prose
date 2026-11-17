@@ -1,0 +1,665 @@
+[
+  {
+    "file": "long.md",
+    "note": "language: en",
+    "findings": [
+      {
+        "line": 60,
+        "col": 79,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…gment when the disk is nearly full , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 78,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  nightly  backup  reads a copy of the…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 78,
+        "col": 15,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  nightly  backup  reads a copy of the data for…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 78,
+        "col": 23,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  nightly  backup  reads a copy of the data for each ne…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 80,
+        "col": 64,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…ery log line during a quiet hour. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 80,
+        "col": 95,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…r. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 84,
+        "col": 73,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…ary when the disk is nearly full. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 84,
+        "col": 104,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…l. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 99,
+        "col": 59,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…ort summary if the file is missing , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 100,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- Our  reverse  proxy  tracks the incoming…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 100,
+        "col": 15,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- Our  reverse  proxy  tracks the incoming events be…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 100,
+        "col": 22,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- Our  reverse  proxy  tracks the incoming events before th…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 101,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  reads every log line…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 101,
+        "col": 14,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  reads every log line to keep…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 101,
+        "col": 22,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  reads every log line to keep the his…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 112,
+        "col": 98,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…e main loop. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 121,
+        "col": 74,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…tries after the lock is released. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 121,
+        "col": 105,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…d. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 141,
+        "col": 87,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…nearly full. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 178,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  cache  layer  compresses a copy of t…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 178,
+        "col": 13,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  cache  layer  compresses a copy of the data…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 178,
+        "col": 20,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  cache  layer  compresses a copy of the data during…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 179,
+        "col": 65,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…failed requests on every restart. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 179,
+        "col": 96,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…t. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 187,
+        "col": 72,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…ing events for each new connection , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 193,
+        "col": 93,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…ive minutes. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 195,
+        "col": 95,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…nearly full. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 208,
+        "col": 62,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…every log line during a quiet hour , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 244,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  parser  drops  the failed requests f…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 244,
+        "col": 14,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  parser  drops  the failed requests for each…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 244,
+        "col": 21,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  parser  drops  the failed requests for each new con…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 246,
+        "col": 89,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…connection. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 266,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  validates a short su…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 266,
+        "col": 14,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  validates a short summary af…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 266,
+        "col": 22,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  validates a short summary after the…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 275,
+        "col": 74,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…entries for each new connection. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 275,
+        "col": 105,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…n. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 285,
+        "col": 74,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…gment when the disk is nearly full , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 315,
+        "col": 4,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- A  retry  policy  batches the failed re…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 315,
+        "col": 11,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- A  retry  policy  batches the failed requests…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 315,
+        "col": 19,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- A  retry  policy  batches the failed requests after th…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 356,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  release  script  rotates every log l…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 356,
+        "col": 15,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  release  script  rotates every log line to ke…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 356,
+        "col": 23,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  release  script  rotates every log line to keep the h…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 369,
+        "col": 69,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…rt summary for each new connection , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 426,
+        "col": 67,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…rt summary for each new connection , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 432,
+        "col": 72,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…requests to keep the history short , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 441,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  report  builder  batches the incomin…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 441,
+        "col": 14,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  report  builder  batches the incoming events…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 441,
+        "col": 23,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  report  builder  batches the incoming events on every…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 443,
+        "col": 70,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“It's worth noting” reads as machine prose. If it is worth noting, note it without the preamble.",
+        "excerpt": "…ng events if the file is missing. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 443,
+        "col": 101,
+        "severity": "warning",
+        "rule": "AI-PHRASE",
+        "message": "“seamless” reads as machine prose. Empty intensifier. Say what actually happens.",
+        "excerpt": "…g. It's worth noting that this is seamless.",
+        "suggestion": ""
+      },
+      {
+        "line": 480,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  merges the failed re…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 480,
+        "col": 14,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  merges the failed requests o…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 480,
+        "col": 22,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  merges the failed requests once ever…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 481,
+        "col": 76,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…ent without blocking the main loop , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 491,
+        "col": 78,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…ngs without blocking the main loop , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 509,
+        "col": 95,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…is released. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 525,
+        "col": 67,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…summary after the lock is released , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 546,
+        "col": 62,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…metrics table during a quiet hour , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 573,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  reads the failed req…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 573,
+        "col": 14,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  reads the failed requests wh…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 573,
+        "col": 22,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  config  loader  reads the failed requests when the d…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 582,
+        "col": 99,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…e main loop. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 601,
+        "col": 6,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  index  compresses  the metrics table…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 601,
+        "col": 13,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  index  compresses  the metrics table once e…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 601,
+        "col": 25,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- The  index  compresses  the metrics table once every five mi…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 613,
+        "col": 4,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- A  small  daemon  compresses the user s…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 613,
+        "col": 11,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- A  small  daemon  compresses the user settings…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 613,
+        "col": 19,
+        "severity": "warning",
+        "rule": "DOUBLE-SPACE",
+        "message": "More than one space between words.",
+        "excerpt": "- A  small  daemon  compresses the user settings if the…",
+        "suggestion": "single space"
+      },
+      {
+        "line": 662,
+        "col": 95,
+        "severity": "error",
+        "rule": "EM-DASH",
+        "message": "em dash in English prose. This character is never correct here.",
+        "excerpt": "…is missing. It is a unique event — rare indeed.",
+        "suggestion": "restructure into a comma, colon, parenthesis or two sentences"
+      },
+      {
+        "line": 669,
+        "col": 70,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…ale entries if the file is missing , then it stops.",
+        "suggestion": ","
+      },
+      {
+        "line": 679,
+        "col": 73,
+        "severity": "error",
+        "rule": "SPACE-BEFORE-PUNCT",
+        "message": "Space before punctuation.",
+        "excerpt": "…requests to keep the history short , then it stops.",
+        "suggestion": ","
+      }
+    ]
+  }
+]
