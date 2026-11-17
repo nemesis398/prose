@@ -1,0 +1,42 @@
+{
+ "length": 895,
+ "is_markup": [
+  [true, 2],
+  [false, 14],
+  [true, 3],
+  [false, 89],
+  [true, 3],
+  [false, 85],
+  [true, 3],
+  [false, 87],
+  [true, 3],
+  [false, 606]
+ ],
+ "suppress": [
+  [false, 895]
+ ],
+ "segments": [
+  {"kind": "markup", "orig_start": 0, "orig_len": 2, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 2, "orig_len": 14, "plain_text": "🥖 Bakery Log\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 16, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 19, "orig_len": 89, "plain_text": "📦 Deliveries\n\nThe truck arrived at six and we unloaded the flour sacks befor breakfast.\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 108, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 111, "orig_len": 85, "plain_text": "📦 More Deliveries\n\nA second truck brought the yeast, and it was acceptible quality.\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 196, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 199, "orig_len": 87, "plain_text": "Third Section 🎯\n\nThis heading carries its emoji at the end, which is the wrong place.\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 286, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 289, "orig_len": 606, "plain_text": "🔥 Hot 🧊 Cold\n\nTwo labels in one heading read as decoration, not as a label.\n\nFamily 👨‍👩‍👧 visits on Sundays and they bring there own bread. The flag 🇩🇪 hangs\nby the door and the other one 🏳️‍🌈 hangs in the window, wich looks nice.\n\nA single sparkle ✨ sits in the middle of this sentence, and a teh typo follows.\n\nLegend for the shelf cards: 🌾 whole grain, 🌾 rye, 🌾 spelt. The wheat sign 🌾\nappears more than once so it is a legend. The red mark 🔴 appears once here,\nand this sentense has a mistake.\n\nThe heading label 📦 also appears in the text of a paragraph, as a pointer to\nthe deliveries section above.\n", "suppress": false}
+ ],
+ "annotations": [
+  {"markup": "# "},
+  {"text": "🥖 Bakery Log\n\n"},
+  {"markup": "## "},
+  {"text": "📦 Deliveries\n\nThe truck arrived at six and we unloaded the flour sacks befor breakfast.\n\n"},
+  {"markup": "## "},
+  {"text": "📦 More Deliveries\n\nA second truck brought the yeast, and it was acceptible quality.\n\n"},
+  {"markup": "## "},
+  {"text": "Third Section 🎯\n\nThis heading carries its emoji at the end, which is the wrong place.\n\n"},
+  {"markup": "## "},
+  {"text": "🔥 Hot 🧊 Cold\n\nTwo labels in one heading read as decoration, not as a label.\n\nFamily 👨‍👩‍👧 visits on Sundays and they bring there own bread. The flag 🇩🇪 hangs\nby the door and the other one 🏳️‍🌈 hangs in the window, wich looks nice.\n\nA single sparkle ✨ sits in the middle of this sentence, and a teh typo follows.\n\nLegend for the shelf cards: 🌾 whole grain, 🌾 rye, 🌾 spelt. The wheat sign 🌾\nappears more than once so it is a legend. The red mark 🔴 appears once here,\nand this sentense has a mistake.\n\nThe heading label 📦 also appears in the text of a paragraph, as a pointer to\nthe deliveries section above.\n"}
+ ]
+}

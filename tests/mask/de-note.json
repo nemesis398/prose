@@ -1,0 +1,18 @@
+{
+ "length": 1222,
+ "is_markup": [
+  [true, 2],
+  [false, 1220]
+ ],
+ "suppress": [
+  [false, 1222]
+ ],
+ "segments": [
+  {"kind": "markup", "orig_start": 0, "orig_len": 2, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 2, "orig_len": 1220, "plain_text": "Sitzungsnotiz der Bäckerei\n\nDie Bäckerei am Marktplatz plant ein neues Sortiment – darüber haben wir heute\ngesprochen. Der Sauerteig ist nicht mehr frisch – das Team will ihn jeden Tag\nneu ansetzen – und die Kosten steigen. Der Ofen läuft seit 6 Uhr und braucht\nrund 250°C, damit die Brötchen knusprig werden. Das Mehl kostet 1,200 Euro pro\nTonne und wiegt 25kg pro Sack. Ein Laib hat 0.8 kg und kostet 3.5 EUR. Das\ngilt z.B. für alle Sorten, d.h. auch für das Roggenbrot.\n\nDarüber hinaus brauchen wir zwei neue Regale. Des Weiteren sollen die Preise\nangepasst werden. Zudem ist die Lieferung verspätet, und nicht zuletzt fehlt\nuns ein Fahrer. Es ist wichtig zu beachten, dass die Kasse nur bar nimmt.\n\nDer Bäckerei ist klein aber fein und hat ein langen Tresen. Wir verkaufen ein\nBrötchen, die sehr gut schmecken. Das Brot ist frisch gebackene und duftet\nherrlich. Er sagte „es läuft gut\" und lachte laut. Die Kunden kommen jeden\nMorgen , weil der Kaffee gut ist. Wir haben dass Rezept geändert.\n\nDer Preis lag bei Mittel–hoch  und das Ergebnis war ok. Die Kollegen sind\nsehr  zufrieden mit der Lage. Zusammenfassend lässt sich sagen, dass die\nSitzung nahtlos verlief und die Zahlen leistungsstark und flexibel wirken.\n", "suppress": false}
+ ],
+ "annotations": [
+  {"markup": "# "},
+  {"text": "Sitzungsnotiz der Bäckerei\n\nDie Bäckerei am Marktplatz plant ein neues Sortiment – darüber haben wir heute\ngesprochen. Der Sauerteig ist nicht mehr frisch – das Team will ihn jeden Tag\nneu ansetzen – und die Kosten steigen. Der Ofen läuft seit 6 Uhr und braucht\nrund 250°C, damit die Brötchen knusprig werden. Das Mehl kostet 1,200 Euro pro\nTonne und wiegt 25kg pro Sack. Ein Laib hat 0.8 kg und kostet 3.5 EUR. Das\ngilt z.B. für alle Sorten, d.h. auch für das Roggenbrot.\n\nDarüber hinaus brauchen wir zwei neue Regale. Des Weiteren sollen die Preise\nangepasst werden. Zudem ist die Lieferung verspätet, und nicht zuletzt fehlt\nuns ein Fahrer. Es ist wichtig zu beachten, dass die Kasse nur bar nimmt.\n\nDer Bäckerei ist klein aber fein und hat ein langen Tresen. Wir verkaufen ein\nBrötchen, die sehr gut schmecken. Das Brot ist frisch gebackene und duftet\nherrlich. Er sagte „es läuft gut\" und lachte laut. Die Kunden kommen jeden\nMorgen , weil der Kaffee gut ist. Wir haben dass Rezept geändert.\n\nDer Preis lag bei Mittel–hoch  und das Ergebnis war ok. Die Kollegen sind\nsehr  zufrieden mit der Lage. Zusammenfassend lässt sich sagen, dass die\nSitzung nahtlos verlief und die Zahlen leistungsstark und flexibel wirken.\n"}
+ ]
+}

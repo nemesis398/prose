@@ -1,0 +1,19 @@
+{
+ "length": 104,
+ "is_markup": [
+  [true, 103],
+  [false, 1]
+ ],
+ "suppress": [
+  [true, 103],
+  [false, 1]
+ ],
+ "segments": [
+  {"kind": "markup", "orig_start": 0, "orig_len": 103, "plain_text": "\n\n", "suppress": true},
+  {"kind": "text", "orig_start": 103, "orig_len": 1, "plain_text": "\n", "suppress": false}
+ ],
+ "annotations": [
+  {"markup": "```sh\n# this is a very bad speling, and  double spaces — here\nprintf '%s\\n' \"no prose in this file\"\n```", "interpretAs": "\n\n"},
+  {"text": "\n"}
+ ]
+}

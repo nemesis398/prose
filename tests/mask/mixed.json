@@ -1,0 +1,42 @@
+{
+ "length": 923,
+ "is_markup": [
+  [true, 2],
+  [false, 18],
+  [true, 3],
+  [false, 269],
+  [true, 3],
+  [false, 219],
+  [true, 3],
+  [false, 201],
+  [true, 3],
+  [false, 202]
+ ],
+ "suppress": [
+  [false, 923]
+ ],
+ "segments": [
+  {"kind": "markup", "orig_start": 0, "orig_len": 2, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 2, "orig_len": 18, "plain_text": "Release Planning\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 20, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 23, "orig_len": 269, "plain_text": "Overview\n\nDas Team trifft sich jeden Montag und bespricht die offenen Aufgaben für die\nkommende Woche. Dabei geht es um die Planung der Releases und um die Frage, ob\ndie Tests schon alle laufen. Die Entwickler haben viele Ideen, aber nur wenig\nZeit für die Umsetzung.\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 292, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 295, "orig_len": 219, "plain_text": "Schedule\n\nDie Veröffentlichung ist für Freitag geplant, wenn alle Prüfungen grün sind und\nder Build ohne Fehler durchläuft. Wir haben noch ein Problem mit den Rechten\nauf dem Server, das bis Mittwoch gelöst sein muss.\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 514, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 517, "orig_len": 201, "plain_text": "Risks\n\nThe main risk is the migration of the old database, which takes longer than we\nplanned. Their is also a chance that the vendor changes the format without\nnotice, and this would cost us a week.\n\n", "suppress": false},
+  {"kind": "markup", "orig_start": 718, "orig_len": 3, "plain_text": "", "suppress": false},
+  {"kind": "text", "orig_start": 721, "orig_len": 202, "plain_text": "Nächste Schritte\n\nWir prüfen die Rechte , sichern die Datenbank und schreiben dann die Notizen\nfür die Kollegen. Das dauert nicht lange, aber es ist wichtig zu beachten, dass\nwir keine Daten verlieren.\n", "suppress": false}
+ ],
+ "annotations": [
+  {"markup": "# "},
+  {"text": "Release Planning\n\n"},
+  {"markup": "## "},
+  {"text": "Overview\n\nDas Team trifft sich jeden Montag und bespricht die offenen Aufgaben für die\nkommende Woche. Dabei geht es um die Planung der Releases und um die Frage, ob\ndie Tests schon alle laufen. Die Entwickler haben viele Ideen, aber nur wenig\nZeit für die Umsetzung.\n\n"},
+  {"markup": "## "},
+  {"text": "Schedule\n\nDie Veröffentlichung ist für Freitag geplant, wenn alle Prüfungen grün sind und\nder Build ohne Fehler durchläuft. Wir haben noch ein Problem mit den Rechten\nauf dem Server, das bis Mittwoch gelöst sein muss.\n\n"},
+  {"markup": "## "},
+  {"text": "Risks\n\nThe main risk is the migration of the old database, which takes longer than we\nplanned. Their is also a chance that the vendor changes the format without\nnotice, and this would cost us a week.\n\n"},
+  {"markup": "## "},
+  {"text": "Nächste Schritte\n\nWir prüfen die Rechte , sichern die Datenbank und schreiben dann die Notizen\nfür die Kollegen. Das dauert nicht lange, aber es ist wichtig zu beachten, dass\nwir keine Daten verlieren.\n"}
+ ]
+}

@@ -33,8 +33,8 @@ to_line_col :: proc(starts: []int, offset: int) -> (line, col: int) {
 	return lo + 1, offset - starts[lo] + 1
 }
 
-// is_py_space is true for what Python's `str.strip()` strips.
-@(private = "file")
+// is_py_space is true for what Python's `str.strip()` strips, which is also
+// what its `re` matches with `\s`.
 is_py_space :: proc(r: rune) -> bool {
 	switch r {
 	case 0x09 ..= 0x0D, 0x1C ..= 0x20, 0x85, 0xA0, 0x1680, 0x2000 ..= 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000:
