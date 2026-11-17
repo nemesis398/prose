@@ -430,6 +430,7 @@ the_key_from_the_variable_beats_rbw :: proc(t: ^testing.T) {
 	defer done(&b, problem)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, b.key, "ENV-KEY")
+	testing.expect_value(t, b.key_from, prose.Key_Source.Env)
 }
 
 @(test)
@@ -447,6 +448,7 @@ rbw_beats_the_credentials_file_and_gets_the_item_name :: proc(t: ^testing.T) {
 	defer done(&b, problem)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, b.key, "item:my item")
+	testing.expect_value(t, b.key_from, prose.Key_Source.Rbw)
 	b2, problem2 := choose(t, s, {}, {rbw = rbw_key, credentials_path = cred})
 	defer done(&b2, problem2)
 	testing.expect_value(t, b2.key, "RBW-KEY")
@@ -466,6 +468,7 @@ rbw_is_not_asked_without_an_item_and_may_be_absent :: proc(t: ^testing.T) {
 	b, problem := choose(t, s, {}, {rbw = rbw_key, credentials_path = cred})
 	defer done(&b, problem)
 	testing.expect_value(t, b.key, "FILE-KEY")
+	testing.expect_value(t, b.key_from, prose.Key_Source.Credentials)
 	// An item that rbw cannot give (not installed, locked, no such item)
 	// falls through to the file; so does a lookup that is not set at all.
 	s.key_item = "lt"

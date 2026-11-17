@@ -48,7 +48,7 @@ an_english_block_gets_a_finding_in_the_references_shape :: proc(t: ^testing.T) {
 	testing.expect_value(t, f.col, 1)
 	testing.expect_value(t, f.severity, prose.Severity.Warning)
 	testing.expect_value(t, f.rule, "HUNSPELL")
-	testing.expect_value(t, f.message, "Unknown word “colr” (hunspell fallback, LanguageTool was unreachable)")
+	testing.expect_value(t, f.message, "Unknown word “colr” (local hunspell check, LanguageTool is off)")
 	testing.expect_value(t, f.excerpt, "")
 	testing.expect_value(t, f.suggestion, "")
 }

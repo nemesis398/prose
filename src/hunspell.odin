@@ -65,8 +65,9 @@ run_hunspell :: proc(
 // starting with `&` (a miss with suggestions) or `#` (a miss without) names
 // its word second. The word is skipped when `words` has it, ignoring case, or
 // when it is not made of letters only, and a word is reported once per line.
-// The finding is a warning, rule `HUNSPELL`, column 1, with the reference's
-// message.
+// The finding is a warning, rule `HUNSPELL`, column 1. Its message differs
+// from the reference's, which blamed an unreachable LanguageTool: this pass
+// runs only when no backend is chosen, so it says LanguageTool is off.
 //
 // A program that is missing, fails to start, runs out of time or gives too
 // much is no findings and no error. What hunspell printed before a failing
@@ -129,7 +130,7 @@ run_hunspell_with :: proc(
 				severity = .Warning,
 				rule = strings.clone("HUNSPELL", allocator),
 				message = fmt.aprintf(
-					"Unknown word “%s” (hunspell fallback, LanguageTool was unreachable)",
+					"Unknown word “%s” (local hunspell check, LanguageTool is off)",
 					word,
 					allocator = allocator,
 				),

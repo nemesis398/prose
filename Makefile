@@ -14,6 +14,7 @@ TEST_DEFINES := -define:ODIN_TEST_RANDOM_SEED=1 \
 .PHONY: build test lint doccheck reference-test
 
 build:
+	mkdir -p skills/prose/bin
 	odin build src -out:skills/prose/bin/prose-check $(ODIN_FLAGS) -define:PROSE_VERSION=$(version)
 
 test:

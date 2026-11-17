@@ -6,6 +6,7 @@
 # tests/golden/NAME.json        --no-lt, nothing leaves the machine
 # tests/golden-lt/NAME.json     with LanguageTool, from a server on 127.0.0.1:PORT
 # tests/golden-lt/de-note.picky.json   de-note.md with --picky
+# tests/golden/fixture.txt      fixture.md's text report, --no-lt, NO_COLOR=1
 #
 # The script fails, naming the file, when a LanguageTool run holds an
 # LT-CHUNK-FAILED finding: that is the reference's answer to a request the
@@ -65,3 +66,17 @@ reference LANGUAGETOOL_SERVER="http://127.0.0.1:$port" \
     python3 -B "$root/reference/check.py" --picky --json de-note.md \
     > "$root/tests/golden-lt/de-note.picky.json"
 no_failed_chunk de-note.md "$root/tests/golden-lt/de-note.picky.json"
+
+# The text report, for the command line's test.
+reference NO_COLOR=1 python3 -B "$root/reference/check.py" --no-lt fixture.md \
+    > "$root/tests/golden/fixture.txt"
+
+# Hand-corrected notes. The reference probes LanguageTool even for a text
+# with no prose left after masking; the port sends nothing for one, so its
+# note has no LanguageTool part.
+set_note() {
+    sed "s/^    \"note\": .*/    \"note\": \"$2\",/" "$root/tests/golden-lt/$1.json" > "$scratch/note.json"
+    mv "$scratch/note.json" "$root/tests/golden-lt/$1.json"
+}
+set_note empty "language: unknown"
+set_note only-code "language: en"

@@ -1,7 +1,7 @@
 [
   {
     "file": "empty.md",
-    "note": "language: unknown | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.9-SNAPSHOT, premium rules active",
+    "note": "language: unknown",
     "findings": []
   }
 ]

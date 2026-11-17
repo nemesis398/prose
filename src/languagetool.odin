@@ -580,7 +580,8 @@ lt_post :: proc(
 // VERSION, TIER", where the tier is "premium rules active" unless the
 // answer carries a `premiumHint`: `software.premium` only says what the
 // build can do. On failure `detail` says why. Allocated with `allocator`.
-@(private = "file")
+// `--selftest` calls it too.
+@(private)
 probe :: proc(backend: Backend, timing: Lt_Timing, allocator := context.allocator) -> (ok: bool, detail: string) {
 	fields := [?][2]string{{"text", LT_PROBE_TEXT}, {"language", "en-US"}}
 	res, why := lt_post(backend, fields[:], timing.probe_s, timing, allocator)

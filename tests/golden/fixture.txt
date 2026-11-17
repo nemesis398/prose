@@ -1,0 +1,72 @@
+fixture.md
+  language: de, en
+       9:32  error    EM-DASH                em dash in German prose. This character is never correct here.
+             Das Analytics-Tool läuft lokal — das ist ein Geviertstrich und mus…
+             → replace with a spaced en dash: –
+      10:29  warning  EN-DASH-BUDGET         3 spaced en dashes in 277 German words. Budget is 1, one per 200. Each one is correct German, but at this density the Gedankenstrich stops being a device and becomes the default rhythm. Densest: line 9 (3×).
+             Entscheidung fiel auf Umami – selbst gehostet, weil kein AVV nö…
+             → rewrite about 2 of them as commas, colons or sentence breaks
+      12:23  error    DE-UNIT-SPACE          German typography puts a space between number and unit: 0 %.
+             null. Wir haben rund 40% der Zugriffe verloren, weil Werbe…
+             → 0 %
+      13:16  warning  DE-THOUSANDS           Looks like an English thousands separator in German text. German writes 5.000, not 5,000.
+             Datenbank hält 5,000 Zeilen und belegt 1.5 GB auf der…
+             → 5.000
+      13:40  warning  DE-DECIMAL             Decimal point in German text. German uses the comma: 3,5.
+             …bank hält 5,000 Zeilen und belegt 1.5 GB auf der Platte. Das gilt z.B. für
+             → 1,5
+      13:72  warning  DE-ABBREV-SPACE        DIN 5008 spaces multi-part abbreviations: z. B.
+             …t 1.5 GB auf der Platte. Das gilt z.B. für
+             → z. B.
+      15:42  warning  DE-GLUE                3 additive connectives in one document. Used this often they stop connecting and start padding.
+             …n wir kein zusätzliches Personal. Des Weiteren bleibt der Betrieb
+             → drop it, or replace with a real logical link
+      16:49  warning  AI-PHRASE              “Es ist wichtig zu beachten” reads as machine prose. Vorgeplänkel. Die Tatsache reicht.
+             …ie Kollegen kommen damit zurecht. Es ist wichtig zu beachten,
+      17:48  warning  AI-PHRASE              “nahtlos” reads as machine prose. Leere Verstärkung. Sag, was passiert.
+             …ation Zeit kostet. Die Lösung ist nahtlos in den Alltag
+      18:41  error    SPACE-BEFORE-PUNCT     Space before punctuation.
+             …ierbar. Wir prüfen das noch einmal , bevor wir umstellen. Der Bereich
+             → ,
+      21:16  warning  QUOTE-MIX              Both typographic quotes (1) and straight quotes (5) in one document. Pick one and hold it.
+             wir das geplant" und meinte damit die zweite "Phas…
+             → „…“ for polished German, straight quotes for notes
+       23:4  warning  EMOJI-DUPLICATE        📊 already labels the heading on line 7. Repeating it stops it working as a landmark.
+             ## 📊 Englischer Teil
+             → pick a different, equally literal icon
+      25:24  error    EM-DASH                em dash in English prose. This character is never correct here.
+             The setup runs locally — no data protection agreement need…
+             → restructure into a comma, colon, parenthesis or two sentences
+      27:58  error    EN-DASH-EN             Spaced en dash as a sentence interrupter in English prose.
+             …ontainer starts in under a second – which is fast enough
+             → restructure into a comma, colon, parenthesis or two sentences
+      28:19  warning  AI-PHRASE              “When it comes to” reads as machine prose. Filler. Name the subject directly.
+             for our purposes. When it comes to storage, the volume sits at 40% c…
+       29:1  warning  AI-PHRASE              “Let's dive” reads as machine prose. Signposting the reader does not need.
+             Let's dive into the numbers before we go fur…
+      31:25  error    EMOJI-POSITION         Emoji inside a heading but not leading it.
+             ## Abschnitt ohne Emoji 🎯
+             → move it to the front: `## ✅ Title`
+      33:22  warning  EMOJI-BODY             📌 outside a heading. Emoji label sections here, they are not inline punctuation.
+             Dieser Abschnitt hat 📌 ein Emoji mitten im Fließtext, wa…
+             → move it to the nearest heading, or drop it
+      36:11  warning  EMOJI-COUNT            2 emoji in one heading. One label reads as a label, two read as decoration.
+             ### 🚀 Ein 🔥 Titel mit zwei Emoji
+             → keep the one that names the section
+      42:30  warning  EM-DASH-CELL           em dash as an empty-cell placeholder. Not prose, but it is still the character we are keeping out of these files.
+             | Erste Zeile    | 5 GB    | —    |
+             → use – or leave the cell empty
+      43:30  warning  EM-DASH-CELL           em dash as an empty-cell placeholder. Not prose, but it is still the character we are keeping out of these files.
+             | Zweite Zeile   | 12 GB   | —    |
+             → use – or leave the cell empty
+       45:4  warning  EMOJI-DUPLICATE        🧪 already labels the heading on line 5. Repeating it stops it working as a landmark.
+             ## 🧪 Wiederholtes Emoji
+             → pick a different, equally literal icon
+       51:3  note     EMOJI-LEGEND           🚌 appears 3× in body text, so it reads as a legend rather than decoration. Left alone.
+             - 🚌 Unterwegs hören oder lesen, ohne…
+             → no action unless you meant it as decoration
+       52:3  note     EMOJI-LEGEND           🖥️ appears 3× in body text, so it reads as a legend rather than decoration. Left alone.
+             - 🖥️ Am Rechner, praktische Übung im L…
+             → no action unless you meant it as decoration
+  6 error(s), 16 warning(s), 2 note(s)
+

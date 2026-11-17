@@ -64,6 +64,16 @@ Env :: struct {
 Backend :: struct {
 	kind:                      Backend_Kind,
 	url, username, key, label: string,
+	key_from:                  Key_Source,
+}
+
+// Where a Premium backend's key came from, for `--selftest`. `None` for
+// every other backend.
+Key_Source :: enum {
+	None,
+	Env,
+	Rbw,
+	Credentials,
 }
 
 // Where the Premium key can come from besides the environment.
@@ -464,15 +474,7 @@ choose_backend :: proc(
 	b: Backend,
 	problem: string,
 ) {
-	kind: Backend_Kind
-	if chosen, ok := s.backend.?; ok {
-		kind = chosen
-	} else if env.server != "" {
-		kind = .Server
-	} else if env.api_key != "" && env.username != "" {
-		kind = .Premium
-	}
-
+	kind, _ := backend_kind(s, env)
 	switch kind {
 	case .None:
 		return
@@ -498,7 +500,7 @@ choose_backend :: proc(
 		}
 	case .Premium:
 		username := env.username if env.username != "" else s.username
-		key, key_problem := find_key(s, env, key_lookup, allocator)
+		key, key_from, key_problem := find_key(s, env, key_lookup, allocator)
 		defer delete(key_problem, allocator)
 		if username == "" || key_problem != "" {
 			problem = premium_problem(username == "", key_problem, allocator)
@@ -511,9 +513,24 @@ choose_backend :: proc(
 			username = strings.clone(username, allocator),
 			key      = key,
 			label    = strings.clone("premium cloud", allocator),
+			key_from = key_from,
 		}
 	}
 	return
+}
+
+// backend_kind is the backend `choose_backend` picks, and why: `from` is
+// "config.json" when the file names it, the variable or variables that
+// chose it, or "the default" for `.None` with neither.
+backend_kind :: proc(s: Settings, env: Env) -> (kind: Backend_Kind, from: string) {
+	if chosen, ok := s.backend.?; ok {
+		return chosen, "config.json"
+	} else if env.server != "" {
+		return .Server, ENV_SERVER
+	} else if env.api_key != "" && env.username != "" {
+		return .Premium, ENV_API_KEY + " and " + ENV_USERNAME
+	}
+	return .None, "the default"
 }
 
 // premium_problem words what keeps Premium from running.
@@ -532,9 +549,10 @@ premium_problem :: proc(no_username: bool, key_problem: string, allocator: runti
 	return strings.join(parts[:n], "; ", allocator)
 }
 
-// find_key walks the key sources in order. It returns the key (allocated),
-// or "" and the problem to show.
-@(private = "file")
+// find_key walks the key sources in order. It returns the key (allocated)
+// and where it came from, or "" and the problem to show. `--selftest` calls
+// it to say whether a Premium setup that `choose_backend` refused has a key.
+@(private)
 find_key :: proc(
 	s: Settings,
 	env: Env,
@@ -542,23 +560,24 @@ find_key :: proc(
 	allocator: runtime.Allocator,
 ) -> (
 	key: string,
+	from: Key_Source,
 	problem: string,
 ) {
 	if env.api_key != "" {
-		return strings.clone(env.api_key, allocator), ""
+		return strings.clone(env.api_key, allocator), .Env, ""
 	}
 	if s.key_item != "" && lookup.rbw != nil {
 		if k, ok := lookup.rbw(s.key_item); ok && k != "" {
-			return strings.clone(k, allocator), ""
+			return strings.clone(k, allocator), .Rbw, ""
 		}
 	}
 	if lookup.credentials_path != "" {
 		k, wide := read_credentials(lookup.credentials_path, allocator)
 		if wide != "" {
-			return "", wide
+			return "", .None, wide
 		}
 		if k != "" {
-			return k, ""
+			return k, .Credentials, ""
 		}
 	}
 

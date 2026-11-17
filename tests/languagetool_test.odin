@@ -226,8 +226,9 @@ load_golden :: proc(t: ^testing.T, path: string) -> (note: string, want: []prose
 // Every corpus file with a golden-lt file gives the reference's findings
 // and note through the fake, and de-note.md with picky its picky file.
 // empty.md and only-code.md have no prose after masking, so the port sends
-// nothing at all (Review Focus 3): their findings must match, the fake must
-// see no request, and their note is Task 10's.
+// nothing at all (Review Focus 3): their findings must match and the fake
+// must see no request. Their golden note is hand-corrected to the port's,
+// which has no LanguageTool part since nothing was sent.
 @(test)
 languagetool_matches_the_golden_files :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
@@ -310,7 +311,8 @@ golden_lt_matches :: proc(
 		if !testing.expectf(t, sent == 0, "%s: %d requests for a text with no prose", name, sent) {
 			return false
 		}
-	} else if !testing.expectf(t, result.note == note, "%s: note %q, reference %q", name, result.note, note) {
+	}
+	if !testing.expectf(t, result.note == note, "%s: note %q, golden %q", name, result.note, note) {
 		return false
 	}
 	return expect_findings(t, golden, 0, result.findings, want)
