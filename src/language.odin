@@ -42,7 +42,9 @@ next_word :: proc(text: []rune, from: int) -> (lo, hi: int) {
 	return lo, i
 }
 
-@(private = "file")
+// count_words counts the matches of the word pattern in `text`. The rules
+// count German words with it for the en dash budget.
+@(private)
 count_words :: proc(text: []rune) -> int {
 	n := 0
 	for p := 0; true; {

@@ -10,8 +10,8 @@ Severity :: enum {
 }
 
 // One problem the checker found. `line` and `col` are 1-based, and `col`
-// counts code points, not bytes. The strings are owned by whoever built the
-// finding; this package never frees them.
+// counts code points, not bytes. The checker's passes allocate all four
+// strings with the allocator they are given; `findings_destroy` frees them.
 Finding :: struct {
 	line, col:                              int,
 	severity:                               Severity,
