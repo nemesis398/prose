@@ -1,0 +1,618 @@
+package prose_tests
+
+import "core:os"
+import "core:strings"
+import "core:testing"
+import prose "../src"
+
+// Every test makes its own directory and removes it at the end, so the tests
+// can run in parallel threads. None of them touches the process environment.
+@(private = "file")
+scratch :: proc(t: ^testing.T) -> string {
+	dir, err := os.make_directory_temp("", "prose-task7-*", context.allocator)
+	testing.expect(t, err == nil)
+	return dir
+}
+
+@(private = "file")
+scratch_done :: proc(dir: string) {
+	_ = os.remove_all(dir)
+	delete(dir)
+}
+
+@(private = "file")
+put :: proc(t: ^testing.T, dir, name, content: string, mode := 0o600) -> string {
+	path, _ := os.join_path({dir, name}, context.allocator)
+	_ = os.change_mode(path, os.perm_number(0o600)) // a read-only leftover of the last round
+	err := os.write_entire_file_from_string(path, content)
+	testing.expect(t, err == nil)
+	testing.expect(t, os.change_mode(path, os.perm_number(mode)) == nil)
+	return path
+}
+
+// load parses `content` as a settings file; the caller destroys both results.
+@(private = "file")
+load :: proc(
+	t: ^testing.T,
+	content: string,
+) -> (
+	s: prose.Settings,
+	err: prose.Settings_Error,
+	path: string,
+	dir: string,
+) {
+	dir = scratch(t)
+	path = put(t, dir, "config.json", content)
+	s, err = prose.load_settings(path)
+	return
+}
+
+@(private = "file")
+load_done :: proc(s: ^prose.Settings, err: ^prose.Settings_Error, path, dir: string) {
+	prose.settings_destroy(s)
+	prose.settings_error_destroy(err)
+	delete(path)
+	scratch_done(dir)
+}
+
+@(private = "file")
+expect_unusable :: proc(t: ^testing.T, content, want_problem: string, loc := #caller_location) {
+	s, err, path, dir := load(t, content)
+	defer load_done(&s, &err, path, dir)
+	testing.expectf(t, err.problem != "", "no error for %q", content, loc = loc)
+	testing.expectf(t, err.path == path, "error path %q, want %q", err.path, path, loc = loc)
+	testing.expectf(
+		t,
+		strings.contains(err.problem, want_problem),
+		"problem %q lacks %q",
+		err.problem,
+		want_problem,
+		loc = loc,
+	)
+	testing.expectf(t, s.backend == nil && s.server == "" && s.ignore_words == nil, "%v", s, loc = loc)
+}
+
+@(test)
+a_missing_file_reads_as_no_settings :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path, _ := os.join_path({dir, "config.json"}, context.allocator)
+	defer delete(path)
+	s, err := prose.load_settings(path)
+	defer prose.settings_destroy(&s)
+	testing.expect_value(t, err.problem, "")
+	testing.expect(t, s.backend == nil)
+	testing.expect_value(t, s.language_rule, "")
+	testing.expect(t, len(s.ignore_words) == 0 && len(s.unknown_keys) == 0)
+	// An empty path is the same: there is no config directory to look in.
+	s2, err2 := prose.load_settings("")
+	testing.expect(t, err2.problem == "" && s2.backend == nil)
+}
+
+@(test)
+a_full_file_is_read :: proc(t: ^testing.T) {
+	s, err, path, dir := load(
+		t,
+		`{"languageRule": "Sie in mails", "ignoreWords": ["Zorbax", " Quillnote ", "", "  "],
+		"languagetool": {"backend": "premium", "server": "https://lt.example.org",
+		"username": "me", "keyItem": "lt-key"}}`,
+	)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, err.problem, "")
+	testing.expect_value(t, s.language_rule, "Sie in mails")
+	// Words are trimmed and blanks dropped, as in the reference.
+	testing.expect_value(t, len(s.ignore_words), 2)
+	if len(s.ignore_words) == 2 {
+		testing.expect_value(t, s.ignore_words[0], "Zorbax")
+		testing.expect_value(t, s.ignore_words[1], "Quillnote")
+	}
+	kind, ok := s.backend.?
+	testing.expect(t, ok && kind == .Premium)
+	testing.expect_value(t, s.server, "https://lt.example.org")
+	testing.expect_value(t, s.username, "me")
+	testing.expect_value(t, s.key_item, "lt-key")
+	testing.expect_value(t, len(s.unknown_keys), 0)
+}
+
+@(test)
+every_backend_name_is_accepted :: proc(t: ^testing.T) {
+	names := [?]string{"none", "public", "premium"}
+	kinds := [?]prose.Backend_Kind{.None, .Public, .Premium}
+	for name, i in names {
+		content := strings.concatenate({`{"languagetool": {"backend": "`, name, `"}}`})
+		defer delete(content)
+		s, err, path, dir := load(t, content)
+		defer load_done(&s, &err, path, dir)
+		testing.expect_value(t, err.problem, "")
+		kind, ok := s.backend.?
+		testing.expectf(t, ok && kind == kinds[i], "backend %q", name)
+	}
+	s, err, path, dir := load(
+		t,
+		`{"languagetool": {"backend": "server", "server": "http://localhost:8081"}}`,
+	)
+	defer load_done(&s, &err, path, dir)
+	kind, ok := s.backend.?
+	testing.expect(t, err.problem == "" && ok && kind == .Server)
+}
+
+@(test)
+a_file_that_is_present_but_unusable_is_an_error_naming_it :: proc(t: ^testing.T) {
+	// Invalid JSON of several shapes, an empty file included.
+	expect_unusable(t, ``, "not valid JSON")
+	expect_unusable(t, `{`, "not valid JSON")
+	expect_unusable(t, `{"languagetool": }`, "not valid JSON")
+	expect_unusable(t, `not json`, "not valid JSON")
+	expect_unusable(t, `{} {}`, "not valid JSON")
+	expect_unusable(t, `{"languagetool": {"backend": "public"}} x`, "not valid JSON")
+	expect_unusable(t, `{"a": 1, "a": 2}`, "not valid JSON")
+	// JSON that is not an object.
+	expect_unusable(t, `[]`, "must be a JSON object")
+	expect_unusable(t, `"text"`, "must be a JSON object")
+	expect_unusable(t, `null`, "must be a JSON object")
+	// A misspelled backend, the case that must not turn Premium off quietly.
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "premuim"}}`,
+		`"languagetool.backend" must be one of none, public, premium, server`,
+	)
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "Premium"}}`,
+		`must be one of none, public, premium, server`,
+	)
+	expect_unusable(t, `{"languagetool": {"backend": 3}}`, `"languagetool.backend" must be`)
+	// Wrong types.
+	expect_unusable(t, `{"ignoreWords": "x"}`, `"ignoreWords" must be a list of strings`)
+	expect_unusable(t, `{"ignoreWords": ["a", 2]}`, `"ignoreWords" must be a list of strings`)
+	expect_unusable(t, `{"languageRule": 1}`, `"languageRule" must be a string`)
+	expect_unusable(t, `{"languagetool": "premium"}`, `"languagetool" must be an object`)
+	expect_unusable(t, `{"languagetool": {"username": 1}}`, `"languagetool.username" must be a string`)
+	expect_unusable(t, `{"languagetool": {"keyItem": []}}`, `"languagetool.keyItem" must be a string`)
+	expect_unusable(t, `{"languagetool": {"server": {}}}`, `"languagetool.server" must be a string`)
+	// A server backend needs a URL.
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server"}}`,
+		`"languagetool.server" is needed`,
+	)
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server", "server": ""}}`,
+		`"languagetool.server" is needed`,
+	)
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server", "server": "lt.example.org"}}`,
+		`must start with http:// or https://`,
+	)
+}
+
+@(test)
+a_file_that_is_too_big_or_not_a_file_is_an_error :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	big, _ := strings.repeat(" ", 2 << 20, context.allocator)
+	defer delete(big)
+	path := put(t, dir, "config.json", big)
+	defer delete(path)
+	s, err := prose.load_settings(path)
+	defer prose.settings_destroy(&s)
+	defer prose.settings_error_destroy(&err)
+	testing.expect_value(t, err.path, path)
+	testing.expect(t, strings.contains(err.problem, "too big"))
+
+	// A directory where the file should be.
+	sub, _ := os.join_path({dir, "d"}, context.allocator)
+	defer delete(sub)
+	testing.expect(t, os.make_directory(sub) == nil)
+	s2, err2 := prose.load_settings(sub)
+	defer prose.settings_destroy(&s2)
+	defer prose.settings_error_destroy(&err2)
+	testing.expect_value(t, err2.path, sub)
+	testing.expect(t, strings.contains(err2.problem, "not a regular file"))
+}
+
+@(test)
+a_byte_order_mark_is_skipped :: proc(t: ^testing.T) {
+	s, err, path, dir := load(t, "\xEF\xBB\xBF{\"languageRule\": \"r\"}")
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, err.problem, "")
+	testing.expect_value(t, s.language_rule, "r")
+}
+
+@(test)
+an_unknown_key_is_kept_apart_and_is_no_error :: proc(t: ^testing.T) {
+	s, err, path, dir := load(
+		t,
+		`{"colour": 1, "apiKey": "SECRET-NEVER", "languagetool": {"backend": "public", "timeout": 3}}`,
+	)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, err.problem, "")
+	testing.expect_value(t, len(s.unknown_keys), 3)
+	if len(s.unknown_keys) == 3 {
+		// Sorted, so the selftest note does not change from run to run.
+		testing.expect_value(t, s.unknown_keys[0], "apiKey")
+		testing.expect_value(t, s.unknown_keys[1], "colour")
+		testing.expect_value(t, s.unknown_keys[2], "languagetool.timeout")
+	}
+	// The key never comes from config.json: "apiKey" is only an unknown key,
+	// so a premium backend chosen later finds no key in it.
+	testing.expect_value(t, s.key_item, "")
+}
+
+// ---------------------------------------------------------------------------
+// The backend choice.
+
+@(private = "file")
+rbw_none :: proc(item: string) -> (string, bool) {
+	return "", false
+}
+
+@(private = "file")
+rbw_key :: proc(item: string) -> (string, bool) {
+	return "RBW-KEY", true
+}
+
+// Answers with the item it was asked for, to show which item is read.
+@(private = "file")
+rbw_echo :: proc(item: string) -> (string, bool) {
+	return strings.concatenate({"item:", item}, context.temp_allocator), true
+}
+
+@(private = "file")
+choose :: proc(
+	t: ^testing.T,
+	s: prose.Settings,
+	env: prose.Env,
+	lookup: prose.Key_Lookup,
+) -> (
+	b: prose.Backend,
+	problem: string,
+) {
+	return prose.choose_backend(s, env, lookup)
+}
+
+@(private = "file")
+done :: proc(b: ^prose.Backend, problem: string) {
+	prose.backend_destroy(b)
+	delete(problem)
+}
+
+@(test)
+the_file_wins_and_the_variables_only_fill_in :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend = prose.Backend_Kind.Public,
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY", username = "u", server = "https://x"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.Public)
+	testing.expect_value(t, b.url, "https://api.languagetool.org")
+	// The public server gets neither key nor account.
+	testing.expect_value(t, b.key, "")
+	testing.expect_value(t, b.username, "")
+	testing.expect_value(t, b.label, "free cloud")
+}
+
+@(test)
+backend_none_in_the_file_wins_over_exported_variables :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend = prose.Backend_Kind.None,
+	}
+	b, problem := choose(t, s, {api_key = "k", username = "u", server = "https://x"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+	testing.expect(t, b.url == "" && b.key == "" && b.username == "")
+}
+
+@(test)
+without_a_file_the_variables_count_as_a_choice :: proc(t: ^testing.T) {
+	{
+		b, problem := choose(t, {}, {server = "https://lt.example.org"}, {})
+		defer done(&b, problem)
+		testing.expect_value(t, problem, "")
+		testing.expect_value(t, b.kind, prose.Backend_Kind.Server)
+		testing.expect_value(t, b.url, "https://lt.example.org")
+		testing.expect_value(t, b.label, "self-hosted")
+	}
+	{
+		// A server wins over a key and an account.
+		b, problem := choose(t, {}, {server = "https://s", api_key = "k", username = "u"}, {})
+		defer done(&b, problem)
+		testing.expect_value(t, b.kind, prose.Backend_Kind.Server)
+	}
+	{
+		b, problem := choose(t, {}, {api_key = "ENV-KEY", username = "me"}, {})
+		defer done(&b, problem)
+		testing.expect_value(t, problem, "")
+		testing.expect_value(t, b.kind, prose.Backend_Kind.Premium)
+		testing.expect_value(t, b.url, "https://api.languagetoolplus.com")
+		testing.expect_value(t, b.username, "me")
+		testing.expect_value(t, b.key, "ENV-KEY")
+		testing.expect_value(t, b.label, "premium cloud")
+	}
+	{
+		// A key without an account, or an account without a key, is no choice.
+		b, problem := choose(t, {}, {api_key = "k"}, {})
+		defer done(&b, problem)
+		testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+		testing.expect_value(t, problem, "")
+		b2, problem2 := choose(t, {}, {username = "u"}, {})
+		defer done(&b2, problem2)
+		testing.expect_value(t, b2.kind, prose.Backend_Kind.None)
+	}
+	{
+		b, problem := choose(t, {}, {}, {})
+		defer done(&b, problem)
+		testing.expect_value(t, problem, "")
+		testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+	}
+	{
+		// A file without "backend" does not choose by its other values.
+		b, problem := choose(t, {server = "https://x", username = "u", key_item = "i"}, {}, {rbw = rbw_key})
+		defer done(&b, problem)
+		testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+	}
+}
+
+@(test)
+a_server_variable_beats_the_files_server :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend = prose.Backend_Kind.Server,
+		server  = "https://file.example.org",
+	}
+	b, problem := choose(t, s, {server = "https://env.example.org"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, b.url, "https://env.example.org")
+	b2, problem2 := choose(t, s, {}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, b2.url, "https://file.example.org")
+	// Built by hand without a URL anywhere: a problem, never an empty URL.
+	b3, problem3 := choose(t, {backend = prose.Backend_Kind.Server}, {}, {})
+	defer done(&b3, problem3)
+	testing.expect(t, problem3 != "" && strings.contains(problem3, "LANGUAGETOOL_SERVER"))
+}
+
+@(test)
+premium_takes_the_username_from_the_variable_first :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "file-user",
+	}
+	b, problem := choose(t, s, {username = "env-user", api_key = "k"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.username, "env-user")
+	b2, problem2 := choose(t, s, {api_key = "k"}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, b2.username, "file-user")
+}
+
+@(test)
+premium_without_an_account_is_a_problem :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend = prose.Backend_Kind.Premium,
+	}
+	b, problem := choose(t, s, {api_key = "k"}, {})
+	defer done(&b, problem)
+	testing.expect(t, strings.contains(problem, "LANGUAGETOOL_USERNAME"))
+	testing.expect(t, strings.contains(problem, "languagetool.username"))
+	testing.expect(t, b.key == "" && b.url == "")
+}
+
+@(test)
+the_key_from_the_variable_beats_rbw :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+		key_item = "lt",
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY"}, {rbw = rbw_key})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.key, "ENV-KEY")
+}
+
+@(test)
+rbw_beats_the_credentials_file_and_gets_the_item_name :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-KEY\n")
+	defer delete(cred)
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+		key_item = "my item",
+	}
+	b, problem := choose(t, s, {}, {rbw = rbw_echo, credentials_path = cred})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.key, "item:my item")
+	b2, problem2 := choose(t, s, {}, {rbw = rbw_key, credentials_path = cred})
+	defer done(&b2, problem2)
+	testing.expect_value(t, b2.key, "RBW-KEY")
+}
+
+@(test)
+rbw_is_not_asked_without_an_item_and_may_be_absent :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-KEY\n")
+	defer delete(cred)
+	// No keyItem: rbw (which would answer) is never consulted.
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+	}
+	b, problem := choose(t, s, {}, {rbw = rbw_key, credentials_path = cred})
+	defer done(&b, problem)
+	testing.expect_value(t, b.key, "FILE-KEY")
+	// An item that rbw cannot give (not installed, locked, no such item)
+	// falls through to the file; so does a lookup that is not set at all.
+	s.key_item = "lt"
+	b2, problem2 := choose(t, s, {}, {rbw = rbw_none, credentials_path = cred})
+	defer done(&b2, problem2)
+	testing.expect_value(t, b2.key, "FILE-KEY")
+	b3, problem3 := choose(t, s, {}, {credentials_path = cred})
+	defer done(&b3, problem3)
+	testing.expect_value(t, b3.key, "FILE-KEY")
+}
+
+@(test)
+the_credentials_file_is_read_like_a_dotenv_line :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+	}
+	Case :: struct {
+		content, key: string,
+	}
+	cases := [?]Case {
+		{"LANGUAGETOOL_API_KEY=abc\n", "abc"},
+		{"LANGUAGETOOL_API_KEY=abc", "abc"},
+		// The first matching line, the value verbatim after the first "=".
+		{"# note\nOTHER=1\nLANGUAGETOOL_API_KEY=a b#c=d \nLANGUAGETOOL_API_KEY=second\n", "a b#c=d "},
+		// A CRLF file does not put the carriage return into the key.
+		{"LANGUAGETOOL_API_KEY=abc\r\n", "abc"},
+		// The key is not read from a line that only looks like it.
+		{" LANGUAGETOOL_API_KEY=x\nexport LANGUAGETOOL_API_KEY=y\nLANGUAGETOOL_API_KEY=z\n", "z"},
+	}
+	for c, i in cases {
+		cred := put(t, dir, "credentials", c.content)
+		defer delete(cred)
+		b, problem := choose(t, s, {}, {credentials_path = cred})
+		defer done(&b, problem)
+		testing.expectf(t, problem == "", "case %d: %s", i, problem)
+		testing.expectf(t, b.key == c.key, "case %d: key %q, want %q", i, b.key, c.key)
+	}
+	// A file without the line, with an empty value, or empty is no key.
+	for content in ([?]string{"", "OTHER=1\n", "LANGUAGETOOL_API_KEY=\n", "LANGUAGETOOL_API_KEY\n"}) {
+		cred := put(t, dir, "credentials", content)
+		defer delete(cred)
+		b, problem := choose(t, s, {}, {credentials_path = cred})
+		defer done(&b, problem)
+		testing.expectf(t, problem != "" && b.key == "", "content %q", content)
+	}
+}
+
+@(test)
+a_credentials_file_wider_than_600_is_refused :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	dir := scratch(t)
+	defer scratch_done(dir)
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+	}
+	for mode in ([?]int{0o644, 0o640, 0o604, 0o660, 0o666, 0o610, 0o601}) {
+		cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-SECRET\n", mode)
+		defer delete(cred)
+		b, problem := choose(t, s, {}, {credentials_path = cred})
+		defer done(&b, problem)
+		testing.expectf(t, strings.contains(problem, cred), "mode %o: problem %q", mode, problem)
+		testing.expectf(t, strings.contains(problem, "600"), "mode %o: problem %q", mode, problem)
+		testing.expectf(t, b.key == "", "mode %o gave a key", mode)
+		// The key is never in the message.
+		testing.expect(t, !strings.contains(problem, "FILE-SECRET"))
+	}
+	// 600, 400 and 700 are fine: only group and other count.
+	for mode in ([?]int{0o600, 0o400, 0o700}) {
+		cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-SECRET\n", mode)
+		defer delete(cred)
+		b, problem := choose(t, s, {}, {credentials_path = cred})
+		defer done(&b, problem)
+		testing.expectf(t, problem == "" && b.key == "FILE-SECRET", "mode %o: %q", mode, problem)
+	}
+	// A wider file is not looked at when a better source has the key.
+	cred := put(t, dir, "credentials", "LANGUAGETOOL_API_KEY=FILE-SECRET\n", 0o644)
+	defer delete(cred)
+	b, problem := choose(t, s, {api_key = "ENV-KEY"}, {credentials_path = cred})
+	defer done(&b, problem)
+	testing.expect(t, problem == "" && b.key == "ENV-KEY")
+}
+
+@(test)
+no_key_anywhere_names_the_three_sources :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	cred, _ := os.join_path({dir, "credentials"}, context.allocator) // does not exist
+	defer delete(cred)
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+		key_item = "lt-premium",
+	}
+	b, problem := choose(t, s, {}, {rbw = rbw_none, credentials_path = cred})
+	defer done(&b, problem)
+	testing.expect(t, b.key == "" && b.url == "")
+	testing.expect(t, strings.contains(problem, "LANGUAGETOOL_API_KEY"), problem)
+	testing.expect(t, strings.contains(problem, "rbw"), problem)
+	testing.expect(t, strings.contains(problem, "lt-premium"), problem)
+	testing.expect(t, strings.contains(problem, cred), problem)
+
+	// Without a keyItem the message says so instead of naming an item.
+	s.key_item = ""
+	b2, problem2 := choose(t, s, {}, {credentials_path = cred})
+	defer done(&b2, problem2)
+	testing.expect(t, strings.contains(problem2, "languagetool.keyItem"), problem2)
+	testing.expect(t, strings.contains(problem2, cred), problem2)
+	testing.expect(t, strings.contains(problem2, "LANGUAGETOOL_API_KEY"), problem2)
+}
+
+@(test)
+the_key_is_not_read_from_the_settings_file :: proc(t: ^testing.T) {
+	// A "apiKey" in config.json is an unknown key, and with no other source
+	// the premium backend has no key.
+	s, err, path, dir := load(
+		t,
+		`{"apiKey": "IN-THE-FILE", "languagetool": {"backend": "premium", "username": "u"}}`,
+	)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, err.problem, "")
+	b, problem := choose(t, s, {}, {})
+	defer done(&b, problem)
+	testing.expect(t, b.key == "" && problem != "")
+	testing.expect(t, !strings.contains(problem, "IN-THE-FILE"))
+}
+
+@(test)
+the_environment_reads_without_a_leak :: proc(t: ^testing.T) {
+	env := prose.env_from_os()
+	prose.env_destroy(&env)
+}
+
+@(test)
+the_real_rbw_lookup_refuses_an_item_that_looks_like_an_option :: proc(t: ^testing.T) {
+	// It must not even start rbw for these.
+	_, ok := prose.rbw_lookup("--help")
+	testing.expect(t, !ok)
+	_, ok = prose.rbw_lookup("")
+	testing.expect(t, !ok)
+}
+
+// ---------------------------------------------------------------------------
+// The config directory.
+
+@(test)
+the_config_directory_follows_xdg_then_home :: proc(t: ^testing.T) {
+	d := prose.config_dir_from("/x/cfg", "/home/u")
+	defer delete(d)
+	testing.expect_value(t, d, "/x/cfg/prose")
+	d2 := prose.config_dir_from("", "/home/u")
+	defer delete(d2)
+	testing.expect_value(t, d2, "/home/u/.config/prose")
+	testing.expect_value(t, prose.config_dir_from("", ""), "")
+}
+
+@(test)
+the_public_config_directory_ends_in_prose_or_is_empty :: proc(t: ^testing.T) {
+	d := prose.config_dir()
+	defer delete(d)
+	testing.expect(t, d == "" || strings.has_suffix(d, "prose"))
+}

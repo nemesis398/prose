@@ -6,10 +6,15 @@ import "core:unicode/utf8"
 
 // How one text is checked. `lang` is "de" or "en" to force the language of
 // every paragraph; anything else, "auto" included, detects it per paragraph.
-// `use_lt` adds the LanguageTool pass, `picky` its picky mode.
+// `use_lt` adds the LanguageTool pass, `picky` its picky mode. `backend` is
+// the LanguageTool to ask, from `choose_backend`, and `words` the accepted
+// words, from `load_words`; both belong to the caller, and their zero values
+// (no backend, no words) leave the checks as they were.
 Check_Options :: struct {
 	lang:          string,
 	use_lt, picky: bool,
+	backend:       Backend,
+	words:         Word_Set,
 }
 
 // Why a text could not be checked. An empty `message` means it could. A
