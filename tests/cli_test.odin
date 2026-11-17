@@ -81,14 +81,29 @@ read_file :: proc(path: string) -> string {
 }
 
 // as_named replaces `path` in `out` with `name`, as the golden files were
-// made in the corpus directory and name the file without a directory.
+// made in the corpus directory and name the file without a directory. The
+// JSON report writes the path with its quote and backslashes escaped, which
+// differs from the path on Windows, so that form is replaced first and the
+// plain one, as the text report prints it, after.
 @(private = "file")
 as_named :: proc(out, path, name: string) -> string {
-	s, _ := strings.replace_all(out, path, name)
-	if raw_data(s) == raw_data(out) {
+	escaped, e1 := strings.replace_all(path, `\`, `\\`)
+	defer if e1 {
+		delete(escaped)
+	}
+	quoted, e2 := strings.replace_all(escaped, `"`, `\"`)
+	defer if e2 {
+		delete(quoted)
+	}
+	s1, a1 := strings.replace_all(out, quoted, name)
+	s2, a2 := strings.replace_all(s1, path, name)
+	if a1 && a2 {
+		delete(s1)
+	}
+	if !a1 && !a2 {
 		return strings.clone(out)
 	}
-	return s
+	return s2
 }
 
 // The JSON of every corpus file, LanguageTool off, is its golden file byte

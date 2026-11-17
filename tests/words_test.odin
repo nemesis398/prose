@@ -155,6 +155,8 @@ the_shipped_dictionary_file_adds_no_word :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(ws), 19)
 }
 
+// On Windows `os.join_path` keeps a root only with a drive or a share, so the
+// shipped path is checked with a drive path and the platform separator.
 @(test)
 the_skill_directory_is_the_parent_of_the_executables_directory :: proc(t: ^testing.T) {
 	d := prose.skill_dir_from_exe_dir("/opt/skills/prose/bin")
@@ -166,7 +168,14 @@ the_skill_directory_is_the_parent_of_the_executables_directory :: proc(t: ^testi
 	d3 := prose.skill_dir_from_exe_dir("")
 	defer delete(d3)
 	testing.expect_value(t, d3, "")
-	p := prose.shipped_dictionary_path("/opt/skills/prose")
+	when ODIN_OS == .Windows {
+		SKILL :: `C:\opt\skills\prose`
+		WANT :: `C:\opt\skills\prose\dictionary.txt`
+	} else {
+		SKILL :: "/opt/skills/prose"
+		WANT :: "/opt/skills/prose/dictionary.txt"
+	}
+	p := prose.shipped_dictionary_path(SKILL)
 	defer delete(p)
-	testing.expect_value(t, p, "/opt/skills/prose/dictionary.txt")
+	testing.expect_value(t, p, WANT)
 }

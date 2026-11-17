@@ -682,14 +682,28 @@ command_output_reports_success_failure_and_absence :: proc(t: ^testing.T) {
 // ---------------------------------------------------------------------------
 // The config directory.
 
+// On Windows `os.join_path` keeps a root only with a drive or a share: a
+// path that starts with a bare separator comes back relative, so the inputs
+// there are drive paths and the results use the platform separator.
 @(test)
 the_config_directory_follows_xdg_then_home :: proc(t: ^testing.T) {
-	d := prose.config_dir_from("/x/cfg", "/home/u")
+	when ODIN_OS == .Windows {
+		XDG :: `C:\x\cfg`
+		HOME :: `C:\home\u`
+		WANT_XDG :: `C:\x\cfg\prose`
+		WANT_HOME :: `C:\home\u\.config\prose`
+	} else {
+		XDG :: "/x/cfg"
+		HOME :: "/home/u"
+		WANT_XDG :: "/x/cfg/prose"
+		WANT_HOME :: "/home/u/.config/prose"
+	}
+	d := prose.config_dir_from(XDG, HOME)
 	defer delete(d)
-	testing.expect_value(t, d, "/x/cfg/prose")
-	d2 := prose.config_dir_from("", "/home/u")
+	testing.expect_value(t, d, WANT_XDG)
+	d2 := prose.config_dir_from("", HOME)
 	defer delete(d2)
-	testing.expect_value(t, d2, "/home/u/.config/prose")
+	testing.expect_value(t, d2, WANT_HOME)
 	testing.expect_value(t, prose.config_dir_from("", ""), "")
 }
 
