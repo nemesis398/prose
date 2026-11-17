@@ -1,4 +1,9 @@
-# Tests for skills/prose/install.ps1. Run: pwsh -NoProfile -File tests/install_test.ps1
+﻿# Tests for skills/prose/install.ps1. Run: pwsh -NoProfile -File tests/install_test.ps1
+# (or powershell, Windows PowerShell 5.1, in its place).
+#
+# The file starts with a UTF-8 byte order mark: without one, Windows
+# PowerShell 5.1 reads it in the ANSI code page, and the folder `ünï` below
+# would be another name.
 #
 # The same cases as tests/install_test.sh, minus the ones that need a Unix
 # shell (signals, a missing sha256sum). Each case copies the real script into a
@@ -114,7 +119,10 @@ function New-Root([string]$Root) {
 }
 
 # Runs the script in a child PowerShell. Returns @{ Out = merged output; Rc = exit code }.
+# Windows PowerShell 5.1 turns each stderr line of a native command into an
+# error record when it is redirected, and 'Stop' would throw on the first one.
 function Invoke-Install([string]$Root, [string[]]$ScriptArgs = @()) {
+    $ErrorActionPreference = 'Continue'
     $script = Join (Join (Join $Root 'skills') 'prose') 'install.ps1'
     $lines = & $childShell -NoProfile -NonInteractive -File $script @ScriptArgs 2>&1 | ForEach-Object { "$_" }
     return @{ Out = ($lines -join "`n"); Rc = $LASTEXITCODE }
