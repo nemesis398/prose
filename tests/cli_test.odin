@@ -1,6 +1,8 @@
 package prose_tests
 
+import "core:bufio"
 import "core:fmt"
+import "core:io"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -792,3 +794,67 @@ a_failed_chunk_is_exit_1_and_the_others_are_checked :: proc(t: ^testing.T) {
 	testing.expect(t, !strings.contains(full.out, "LT-CHUNK-FAILED"))
 }
 
+// A stream that logs which writer wrote, in the order of the writes that
+// reached it.
+@(private = "file")
+Log_Sink :: struct {
+	log:  ^[dynamic]string,
+	name: string,
+}
+
+@(private = "file")
+log_sink_proc :: proc(data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+	sink := (^Log_Sink)(data)
+	#partial switch mode {
+	case .Write:
+		append(sink.log, sink.name)
+		return i64(len(p)), nil
+	case .Query:
+		return io.query_utility({.Write, .Query})
+	}
+	return 0, .Empty
+}
+
+// On the exit-2 path the error must not overtake the reports that came
+// before it: stdout is buffered as in `main`, and the run flushes it before it
+// writes to stderr. The first file is clean and reported; the second one
+// meets a backend that refuses.
+@(test)
+stdout_is_flushed_before_the_error_on_exit_2 :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Refuse_403)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d", port)
+	defer delete(url)
+
+	log := make([dynamic]string)
+	defer delete(log)
+	out_sink := Log_Sink{&log, "out"}
+	err_sink := Log_Sink{&log, "err"}
+	out: bufio.Writer
+	bufio.writer_init(&out, io.Writer{procedure = log_sink_proc, data = &out_sink})
+	defer bufio.writer_destroy(&out)
+	// The buffer is far bigger than the report, as `main`'s is.
+	r: strings.Reader
+	code := prose.run(
+		{CORPUS + "empty.md", CORPUS + "fixture.md"},
+		strings.to_reader(&r, ""),
+		bufio.writer_to_writer(&out),
+		io.Writer{procedure = log_sink_proc, data = &err_sink},
+		prose.Run_Env{lt = {server = url}, skill_dir = SKILL, hunspell_command = NO_HUNSPELL},
+	)
+	testing.expect_value(t, code, 2)
+	first_out, first_err := -1, -1
+	for who, i in log {
+		if who == "out" && first_out < 0 {
+			first_out = i
+		}
+		if who == "err" && first_err < 0 {
+			first_err = i
+		}
+	}
+	testing.expectf(t, first_err >= 0, "nothing reached stderr: %v", log)
+	testing.expectf(t, first_out >= 0 && first_out < first_err, "stderr came before the report reached stdout: %v", log)
+}
