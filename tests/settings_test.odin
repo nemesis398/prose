@@ -619,6 +619,20 @@ a_server_variable_without_a_scheme_is_http :: proc(t: ^testing.T) {
 	defer done(&b3, problem3)
 	testing.expect_value(t, b3.url, "HTTPS://lt.example.org")
 	testing.expect(t, !b3.assumed_http)
+	// Only a scheme at the start counts: "://" later in the value, in a query
+	// string, is not one. Spaces around the value are not part of it.
+	b6, problem6 := choose(t, {}, {server = "h:1/?r=http://x"}, {})
+	defer done(&b6, problem6)
+	testing.expect_value(t, problem6, "")
+	testing.expect_value(t, b6.url, "http://h:1/?r=http://x")
+	b7, problem7 := choose(t, {}, {server = "  localhost:8081 \t"}, {})
+	defer done(&b7, problem7)
+	testing.expect_value(t, problem7, "")
+	testing.expect_value(t, b7.url, "http://localhost:8081")
+	b8, problem8 := choose(t, {}, {server = " https://lt.example.org "}, {})
+	defer done(&b8, problem8)
+	testing.expect_value(t, b8.url, "https://lt.example.org")
+	testing.expect(t, !b8.assumed_http)
 	// Another scheme is still refused, with a place and no value.
 	for bad in ([?]string{"ftp://lt.example.org", "file:///etc/passwd", "gopher://x"}) {
 		b4, problem4 := choose(t, {}, {server = bad}, {})

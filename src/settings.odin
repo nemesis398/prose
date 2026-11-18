@@ -129,6 +129,27 @@ has_http_scheme :: proc(url: string) -> bool {
 	return false
 }
 
+// has_scheme tells whether `url` starts with a URL scheme and "://", as
+// RFC 3986 spells a scheme: a letter, then letters, digits, `+`, `-` or `.`.
+// A "://" further on, in a path or a query string, is not a scheme.
+@(private = "file")
+has_scheme :: proc(url: string) -> bool {
+	for c, i in transmute([]byte)url {
+		switch c {
+		case 'a' ..= 'z', 'A' ..= 'Z':
+		case '0' ..= '9', '+', '-', '.':
+			if i == 0 {
+				return false
+			}
+		case ':':
+			return i > 0 && strings.has_prefix(url[i:], "://")
+		case:
+			return false
+		}
+	}
+	return false
+}
+
 // settings_name is how a message names the settings file: the whole path
 // when the settings came from a file, else "config.json". The string is
 // `s.path` itself, not a copy.
@@ -677,7 +698,10 @@ choose_backend :: proc(
 			label = strings.clone("free cloud", allocator),
 		}
 	case .Server:
-		url := env.server if env.server != "" else s.server
+		// Spaces around the variable's value are a quoting slip, not part
+		// of the URL.
+		env_server := strings.trim_space(env.server)
+		url := env_server if env_server != "" else s.server
 		if url == "" {
 			problem = fmt.aprintf(
 				"the server backend needs a URL: set " + ENV_SERVER + " or \"languagetool.server\" in %s",
@@ -687,7 +711,7 @@ choose_backend :: proc(
 			return
 		}
 		assumed_http := false
-		if env.server != "" && !strings.contains(url, "://") {
+		if env_server != "" && !has_scheme(url) {
 			// v0.1.0 gave the variable to curl as it was, and curl reads
 			// `localhost:8081` as http. Any other scheme is still refused.
 			url = strings.concatenate({"http://", url}, context.temp_allocator)
@@ -697,7 +721,7 @@ choose_backend :: proc(
 			// Say where the bad value is, so that it is not looked for in the
 			// wrong place. The value itself stays out: a URL may hold a login.
 			source := ENV_SERVER + " (environment variable)"
-			if env.server == "" {
+			if env_server == "" {
 				source = fmt.tprintf("\"languagetool.server\" in %s", settings_name(s))
 			}
 			problem = fmt.aprintf("%s must start with http:// or https://", source, allocator = allocator)
