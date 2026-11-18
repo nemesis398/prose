@@ -302,7 +302,9 @@ mask_matches_the_reference_on_the_corpus :: proc(t: ^testing.T) {
 			checked += 1
 		}
 	}
-	testing.expectf(t, checked >= 10, "only %d corpus files matched", checked)
+	corpus := corpus_count(t)
+	testing.expectf(t, corpus >= 10, "only %d corpus files found", corpus)
+	testing.expectf(t, checked == corpus, "%d of %d corpus files matched", checked, corpus)
 }
 
 // compare_with_reference reports the first difference in each part and

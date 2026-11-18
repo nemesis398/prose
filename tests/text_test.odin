@@ -400,6 +400,24 @@ write_json_several_results_and_findings :: proc(t: ^testing.T) {
 
 // The goldens are what the reference printed, so reading one, parsing it,
 // writing it back and getting the same bytes proves the writer.
+// corpus_count is the number of documents in tests/corpus. The oracle tests
+// check every one of them against its reference file and assert that count,
+// so a document that is skipped, or an oracle file that is missing, fails.
+corpus_count :: proc(t: ^testing.T) -> int {
+	dir := strings.concatenate({#directory, "corpus"})
+	defer delete(dir)
+	entries, err := os.read_all_directory_by_path(dir, context.allocator)
+	testing.expect_value(t, err, nil)
+	defer os.file_info_slice_delete(entries, context.allocator)
+	count := 0
+	for e in entries {
+		if strings.has_suffix(e.name, ".md") {
+			count += 1
+		}
+	}
+	return count
+}
+
 @(test)
 write_json_round_trips_every_golden_file :: proc(t: ^testing.T) {
 	dir := strings.concatenate({#directory, "golden"})
@@ -437,7 +455,9 @@ write_json_round_trips_every_golden_file :: proc(t: ^testing.T) {
 		testing.expectf(t, strings.to_string(sb) == string(data), "%s does not round-trip", e.name)
 		checked += 1
 	}
-	testing.expectf(t, checked >= 10, "only %d golden files found", checked)
+	corpus := corpus_count(t)
+	testing.expectf(t, corpus >= 10, "only %d corpus files found", corpus)
+	testing.expectf(t, checked == corpus, "%d golden files round-tripped, %d corpus files", checked, corpus)
 }
 
 @(private = "file")
