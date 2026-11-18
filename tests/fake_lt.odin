@@ -101,6 +101,12 @@ Fake_Mode :: enum {
 	Too_Big_Answer,
 	// The first request gets 429, every later one is replayed.
 	Rate_Limit_First,
+	// Read every request, send the head of a 200 that promises a body, and
+	// close the connection: the transfer is cut short, which a retry can cure.
+	Cut_After_Headers,
+	// Read every request and answer with something that is not HTTP: libcurl
+	// fails with a weird server reply, which a retry cannot cure.
+	Garbage_Reply,
 }
 
 Fake_Lt :: struct {
@@ -355,6 +361,16 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 	if fake.mode == .Hang {
 		return true
 	}
+	if fake.mode == .Cut_After_Headers {
+		head := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n"
+		net.send_tcp(client, transmute([]byte)head)
+		return
+	}
+	if fake.mode == .Garbage_Reply {
+		garbage := "this is not http\r\n\r\n"
+		net.send_tcp(client, transmute([]byte)garbage)
+		return
+	}
 
 	path := req.path
 	if q := strings.index_byte(path, '?'); q >= 0 {
@@ -426,7 +442,7 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 			send_response(client, 429, "text/plain", "slow down")
 			return
 		}
-	case .Replay, .Refuse_403, .Hang, .Fail_Second_Chunk:
+	case .Replay, .Refuse_403, .Hang, .Fail_Second_Chunk, .Cut_After_Headers, .Garbage_Reply:
 	}
 
 	if fake.mode == .Fail_Second_Chunk && "data" in form {

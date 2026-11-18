@@ -810,6 +810,137 @@ post_form_stops_when_libcurl_refuses_an_option :: proc(t: ^testing.T) {
 	testing.expect_value(t, fake_lt_requests(fake), 0)
 }
 
+// A transfer cut short after the headers is the network letting go: it is
+// retried as often as the timing says, and then the check stops.
+@(test)
+a_connection_cut_after_the_headers_is_retried :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Cut_After_Headers)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d/v2/check", port)
+	defer delete(url)
+	status, body, herr := prose.post_form(url, {{"text", "x"}}, 5)
+	defer delete(body)
+	defer delete(herr.message)
+	testing.expect_value(t, status, 0)
+	testing.expect(t, herr.message != "")
+	testing.expect_value(t, herr.retryable, true)
+	testing.expect_value(t, fake_lt_requests(fake), 1)
+
+	backend := server_backend(port)
+	defer delete(backend.url)
+	timing := prose.Lt_Timing{request_s = 5, probe_s = 5, retries = 2, retry_pause_ms = 10}
+	result, err := prose.check_text_timed("A short note.\n", {lang = "en", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	testing.expectf(t, strings.contains(err.message, "is unreachable"), "error %q", err.message)
+	testing.expect_value(t, fake_lt_requests(fake), 1 + 3)
+}
+
+// What a retry cannot cure is not retried: a reply that is no HTTP, a URL
+// with a scheme that is not spoken. One request, and the failure is final.
+@(test)
+an_error_a_retry_cannot_cure_is_not_retried :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Garbage_Reply)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d/v2/check", port)
+	defer delete(url)
+	status, body, herr := prose.post_form(url, {{"text", "x"}}, 5)
+	delete(body)
+	defer delete(herr.message)
+	testing.expect_value(t, status, 0)
+	testing.expect(t, herr.message != "")
+	testing.expect_value(t, herr.retryable, false)
+
+	backend := server_backend(port)
+	defer delete(backend.url)
+	timing := prose.Lt_Timing{request_s = 5, probe_s = 5, retries = 2, retry_pause_ms = 10}
+	result, err := prose.check_text_timed("A short note.\n", {lang = "en", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	testing.expect(t, err.message != "")
+	// One request from post_form, one from the check: neither was repeated.
+	testing.expect_value(t, fake_lt_requests(fake), 2)
+
+	// A scheme that is not spoken never leaves the machine and is final.
+	status2, body2, herr2 := prose.post_form("ftp://127.0.0.1:1/v2/check", {{"text", "x"}}, 5)
+	delete(body2)
+	defer delete(herr2.message)
+	testing.expect_value(t, status2, 0)
+	testing.expect(t, herr2.message != "")
+	testing.expect_value(t, herr2.retryable, false)
+}
+
+// The path from the process environment to libcurl, end to end: with a proxy
+// variable pointing at a dead port, a run against a LanguageTool on loopback
+// still reaches it, because `run_env_from_os` hands the loopback list on and
+// `lt_post` gives it to libcurl. In process, the environment is the test
+// runner's and may not be touched, so this builds the checker and runs it with
+// an environment of its own. The premise is checked too: when the user's own
+// `NO_PROXY` is set, the bypass yields and the same run dies at the dead proxy.
+@(test)
+a_run_reaches_loopback_past_a_proxy_variable :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		fake, port := fake_lt_start(RECORDINGS, .Replay)
+		defer fake_lt_stop(t, fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		dir, derr := os.make_directory_temp("", "prose-proxy-*", context.allocator)
+		if !testing.expect(t, derr == nil) {
+			return
+		}
+		defer {
+			_ = os.remove_all(dir)
+			delete(dir)
+		}
+		exe, _ := os.join_path({dir, "prose-check"}, context.allocator)
+		defer delete(exe)
+		out_flag := strings.concatenate({"-out:", exe})
+		defer delete(out_flag)
+		build_state, build_out, build_err, berr := os.process_exec(
+			{command = {"odin", "build", #directory + "../src", out_flag, "-o:none"}},
+			context.allocator,
+		)
+		defer delete(build_out)
+		defer delete(build_err)
+		if !testing.expectf(t, berr == nil && build_state.exit_code == 0, "build failed: %v %s", berr, build_err) {
+			return
+		}
+
+		server := fmt.aprintf("LANGUAGETOOL_SERVER=http://127.0.0.1:%d", port)
+		defer delete(server)
+		xdg := strings.concatenate({"XDG_CONFIG_HOME=", dir})
+		defer delete(xdg)
+		file := #directory + "corpus/fixture.md"
+		// Port 1 is not listening: a request sent there fails to connect.
+		dead := "http_proxy=http://127.0.0.1:1"
+
+		run :: proc(t: ^testing.T, exe, file: string, env: []string) -> (code: int, stderr: string) {
+			state, out, err, perr := os.process_exec({command = {exe, file}, env = env}, context.allocator)
+			delete(out)
+			testing.expectf(t, perr == nil, "run failed: %v", perr)
+			return state.exit_code, string(err)
+		}
+
+		code, errs := run(t, exe, file, {server, xdg, dead})
+		defer delete(errs)
+		testing.expectf(t, code == 0 || code == 1, "with the bypass: exit %d, stderr %q", code, errs)
+		testing.expect(t, fake_lt_requests(fake) > 0)
+
+		before := fake_lt_requests(fake)
+		code2, errs2 := run(t, exe, file, {server, xdg, dead, "NO_PROXY=example.org"})
+		defer delete(errs2)
+		testing.expectf(t, code2 == 2, "with the user's NO_PROXY: exit %d, stderr %q", code2, errs2)
+		testing.expect_value(t, fake_lt_requests(fake), before)
+	}
+}
+
 // A libcurl built without proxy support refuses CURLOPT_NOPROXY, and has no
 // proxy to bypass, so that refusal is not an error. Every other refusal is.
 @(test)
