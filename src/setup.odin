@@ -5,8 +5,10 @@ import "core:bufio"
 import "core:encoding/json"
 import "core:fmt"
 import "core:io"
+import "core:math"
 import "core:os"
 import "core:slice"
+import "core:strconv"
 import "core:strings"
 
 // `prose-check --setup`: writes the settings file, from the questions on a
@@ -68,15 +70,93 @@ apply_values :: proc(path, values_json: string, allocator := context.allocator) 
 		return setup_fail(path, allocator, "the values on standard input are not valid JSON (%s)", detail)
 	case .Not_Object:
 		return setup_fail(path, allocator, "the values on standard input must be a JSON object")
+	case .Unkeepable_Number:
+		return setup_fail(path, allocator, "the values on standard input hold a number %s", detail)
 	}
 	values := &root.(json.Object)
 	return apply_object(path, values, "the values on standard input", allocator)
 }
 
-// parse_object is `parse_json_object` for setup.
+// parse_object is `parse_json_object` for setup, which writes what it read
+// back, so it also refuses a number it could not write as it is. See
+// `find_unkeepable_number`. `detail` of that problem finishes the sentence
+// "... a number ...".
 @(private = "file")
 parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
-	return parse_json_object(text, allocator)
+	root, kind, detail = parse_json_object(text, allocator)
+	if kind != .None {
+		return
+	}
+	body := strings.trim_prefix(text, "\xEF\xBB\xBF")
+	if tok, offset, found := find_unkeepable_number(body); found {
+		json.destroy_value(root, allocator)
+		return nil, .Unkeepable_Number, fmt.tprintf("prose-check cannot keep exactly: %s at %s", tok, position_text(body, offset))
+	}
+	return
+}
+
+// find_unkeepable_number looks for a number that does not survive being
+// read and written again: an integer outside 64 bits, which the parser turns
+// into some other number without a word; a float that is out of range
+// (1e999 is +Inf, and 1e-999 is 0); everything else is written back with the
+// same value. The text has parsed already.
+@(private = "file")
+find_unkeepable_number :: proc(text: string) -> (number: string, offset: int, found: bool) {
+	t := json.make_tokenizer(text, .JSON, true)
+	for {
+		tok, err := json.get_token(&t)
+		if err != .None || tok.kind == .EOF {
+			return
+		}
+		bad := false
+		#partial switch tok.kind {
+		case .Integer:
+			bad = !fits_i64(tok.text)
+		case .Float:
+			f, ok := strconv.parse_f64(tok.text)
+			bad = !ok || math.is_inf(f) || math.is_nan(f) || (f == 0 && has_nonzero_mantissa(tok.text))
+		}
+		if bad {
+			return tok.text, tok.offset, true
+		}
+	}
+}
+
+// fits_i64 tells whether the integer literal `digits` (an optional minus,
+// then digits) is within 64 bits. strconv.parse_i64 does not say: it
+// returns some number for 123456789012345678901234567890.
+@(private = "file")
+fits_i64 :: proc(digits: string) -> bool {
+	rest := digits
+	limit: u64 = 1 << 63 - 1
+	if strings.has_prefix(rest, "-") {
+		rest = rest[1:]
+		limit = 1 << 63
+	}
+	v: u64
+	for c in transmute([]u8)rest {
+		d := u64(c - '0')
+		if v > (limit - d) / 10 {
+			return false
+		}
+		v = v * 10 + d
+	}
+	return true
+}
+
+// has_nonzero_mantissa tells whether a float literal has a digit but 0 before
+// its exponent, so that a value of 0 means it underflowed.
+@(private = "file")
+has_nonzero_mantissa :: proc(literal: string) -> bool {
+	for c in transmute([]u8)literal {
+		if c == 'e' || c == 'E' {
+			break
+		}
+		if c >= '1' && c <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 // is_key_name tells whether `name` is a spelling of the API key's name.
@@ -231,6 +311,8 @@ read_stored :: proc(target, path: string, allocator: runtime.Allocator) -> (valu
 		return parsed, setup_fail(path, allocator, "%s: is not valid JSON (%s)", path, detail)
 	case .Not_Object:
 		return parsed, setup_fail(path, allocator, "%s: must be a JSON object", path)
+	case .Unkeepable_Number:
+		return parsed, setup_fail(path, allocator, "%s: holds a number %s", path, detail)
 	}
 	return parsed, {}
 }
@@ -341,7 +423,15 @@ emit_value :: proc(b: ^strings.Builder, value: json.Value, depth: int) {
 	case json.Integer:
 		strings.write_i64(b, v)
 	case json.Float:
-		strings.write_float(b, v, 'g', -1, 64)
+		// The shortest text that reads back as the same number, and still a
+		// float: 1.0 stays 1.0 and does not become the integer 1.
+		buf: [32]byte
+		text := strconv.write_float(buf[:], v, 'g', -1, 64)
+		text = strings.trim_prefix(text, "+") // JSON has no plus sign
+		strings.write_string(b, text)
+		if !strings.contains_any(text, ".eE") {
+			strings.write_string(b, ".0")
+		}
 	case json.String:
 		write_json_string(b, string(v))
 	case json.Array:

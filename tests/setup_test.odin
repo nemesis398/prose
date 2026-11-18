@@ -540,6 +540,85 @@ a_trailing_comma_or_a_duplicate_key_is_refused_with_its_place :: proc(t: ^testin
 	expect_file(t, path, "{\n  \"languageRule\": \"r\",\n}\n")
 }
 
+// What setup does not know it keeps as it was. Numbers used to pass through
+// f64: 9007199254740993 lost its last digit, 1.0 came back as 1 and 1e999 as
+// +Inf, which made the new file invalid JSON.
+@(test)
+unknown_numbers_round_trip_exactly :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	put(
+		t,
+		path,
+		`{"big": 9007199254740993, "min": -9223372036854775808, "max": 9223372036854775807, "one": 1.0, "half": 0.5, "exp": 1e21, "neg": -0.0, "list": [1, 1.0, 2.50]}`,
+	)
+	c := values(dir, `{"languageRule": "R", "late": 18014398509481985, "lf": 3.0}`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 0)
+	expect_file(
+		t,
+		path,
+		`{
+  "languageRule": "R",
+  "big": 9007199254740993,
+  "exp": 1e+21,
+  "half": 0.5,
+  "late": 18014398509481985,
+  "lf": 3.0,
+  "list": [
+    1,
+    1.0,
+    2.5
+  ],
+  "max": 9223372036854775807,
+  "min": -9223372036854775808,
+  "neg": -0.0,
+  "one": 1.0
+}
+`,
+	)
+	// And again: stable.
+	c2 := values(dir, `{"languageRule": "R"}`)
+	defer cli_done(&c2)
+	testing.expect_value(t, c2.code, 0)
+	expect_contains(t, read_text(path), `"big": 9007199254740993`)
+}
+
+// A number that cannot be kept is refused with a clear message, not turned
+// into something else; the file stays as it was.
+@(test)
+a_number_that_cannot_be_kept_is_refused_clearly :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	for bad in ([]string{`1e999`, `-1e999`, `123456789012345678901234567890`, `9223372036854775808`, `-9223372036854775809`, `1e-999`}) {
+		stored := strings.concatenate({`{"x": `, bad, `}`})
+		defer delete(stored)
+		put(t, path, stored)
+		c := values(dir, `{"languageRule": "R"}`)
+		defer cli_done(&c)
+		testing.expectf(t, c.code == 2, "%s: exit %d", bad, c.code)
+		expect_contains(t, c.err, bad)
+		expect_contains(t, c.err, "line 1, column 7")
+		expect_contains(t, c.err, "cannot keep")
+		expect_contains(t, c.err, "unchanged")
+		expect_file(t, path, stored)
+		// The same number in the values.
+		put(t, path, `{"languageRule": "keep"}`)
+		values_text := strings.concatenate({`{"y": `, bad, `}`})
+		defer delete(values_text)
+		c2 := values(dir, values_text)
+		defer cli_done(&c2)
+		testing.expectf(t, c2.code == 2, "%s in the values: exit %d", bad, c2.code)
+		expect_contains(t, c2.err, "the values on standard input")
+		expect_contains(t, c2.err, "cannot keep")
+		expect_file(t, path, `{"languageRule": "keep"}`)
+	}
+}
+
 @(test)
 oversized_values_are_refused :: proc(t: ^testing.T) {
 	dir := scratch(t)

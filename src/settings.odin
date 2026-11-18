@@ -301,6 +301,10 @@ parse_settings :: proc(
 	case .Not_Object:
 		err = fail(path, allocator, "must be a JSON object")
 		return
+	case .Unkeepable_Number:
+		// Only setup makes this one: the checker reads no number.
+		err = fail(path, allocator, "holds a number that cannot be kept")
+		return
 	}
 	obj := root.(json.Object)
 	return read_settings(obj, path, false, allocator)
@@ -387,6 +391,7 @@ Json_Problem :: enum {
 	None,
 	Syntax, // not valid JSON; `detail` says what and where
 	Not_Object, // valid JSON, but not an object
+	Unkeepable_Number, // a number that setup cannot write back as it is (setup.odin)
 }
 
 // parse_json_object parses `text` as one JSON object and nothing after it.
