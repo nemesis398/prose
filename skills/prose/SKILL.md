@@ -70,6 +70,13 @@ not run, never that the text is clean.** Read the line it printed:
   everything else, and say that LanguageTool did not run.
 - It names a backend and an HTTP status: the configured LanguageTool refused
   or did not answer. Say so. No other backend stands in for it.
+- It names an input: `not a file: PATH`, `PATH is not UTF-8` (or `<stdin> is
+  not UTF-8`) or `cannot read PATH`. The run stops before it checks anything,
+  even when only one of several inputs is at fault, so no input was checked.
+  Correct the path or the encoding, and run again.
+- It is a usage error: an unknown option, a missing or wrong `--lang` value, or
+  no file at all (that prints the usage text). Correct the command line. No
+  text was checked.
 
 **`LanguageTool is off` in the report means grammar was not checked.** No
 backend is chosen, so nothing left the machine: the rules ran, and English
@@ -225,11 +232,21 @@ inflate a note into an essay.
 
 ## Language
 
+Pick the language from the text and the reader, not from the conversation. An
+existing text stays in its own language, with a language rule or without one.
+
 Before writing, run `"${CLAUDE_SKILL_DIR}/bin/prose-check" --rules` and follow
 the language rule it prints: which language a text is written in, and when a
-German reader gets `Sie`. Without a rule, write in the language of the
-request, keep an existing text in its own language, and address a German
-reader with lowercase `du`, held consistently through a document.
+German reader gets `Sie`. Without a rule, write new text in the language of the
+request, and address a German reader with lowercase `du`, held consistently
+through a document.
+
+If `--rules` exits 2, or the binary is missing, the rule was not read. For a
+missing binary, run `/prose:setup` or the `install` script, as under
+[The loop](#the-loop). For exit 2, the line it printed names the settings file;
+`/prose:setup` repairs a wrong `languageRule`, and the list above says which
+other faults it cannot. Do not guess a rule. Write as you would without one,
+and tell the user that their rule was not applied.
 
 Mixed files are normal and correct. English headings over German prose in one
 note is a real pattern, not a mistake to clean up. The checker detects
