@@ -5,7 +5,7 @@ import "core:time"
 import "core:unicode/utf8"
 import prose "../src"
 
-// The local spelling pass as `check_text` and `run_hunspell` run it, on
+// The local spelling pass as `check_text` and `run_hunspell_with` run it, on
 // every system. On Windows it does nothing: `command_with_input` cannot bound
 // a wrapper's own child there, so hunspell is not started at all. Elsewhere
 // the stub's one miss is found. tests/hunspell_test.odin covers the pass

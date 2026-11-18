@@ -33,21 +33,10 @@ hunspell_program :: proc() -> string {
 	return "hunspell"
 }
 
-// run_hunspell runs the local spelling pass with `hunspell_program`. See
-// `run_hunspell_with`.
-run_hunspell :: proc(
-	src: []rune,
-	m: ^Masked,
-	blocks: []Block,
-	starts: []int,
-	words: Word_Set,
-	allocator := context.allocator,
-) -> [dynamic]Finding {
-	return run_hunspell_with(hunspell_program(), HUNSPELL_TIMEOUT, src, m, blocks, starts, words, allocator)
-}
-
-// run_hunspell_with is `run_hunspell` with the program and the time it may
-// take given.
+// run_hunspell_with runs the local spelling pass with the program `command`,
+// which may take `timeout` for the whole text. The caller chooses the
+// program (`hunspell_program` is the default); `check_text` is the one place
+// that does.
 //
 // The input is the masked text: every character that is markup, or that is
 // not in an English block, becomes a space, and the line breaks stay, so a
