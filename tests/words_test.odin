@@ -180,3 +180,27 @@ the_skill_directory_is_the_parent_of_the_executables_directory :: proc(t: ^testi
 	defer delete(p)
 	testing.expect_value(t, p, WANT)
 }
+
+// A line ends at \n, at \r\n and at a lone \r (the old Mac), as a text
+// editor on any system understands it.
+@(test)
+a_lone_carriage_return_ends_a_line :: proc(t: ^testing.T) {
+	cfg, skill := dirs(t)
+	defer dirs_done(cfg, skill)
+	write(t, cfg, "Alpha\rBeta\r\nGamma\n# a comment\rDelta\r\r  Epsilon  \r")
+	ws := prose.load_words_in({}, cfg, skill)
+	defer prose.word_set_destroy(&ws)
+	for w in ([]string{"alpha", "beta", "gamma", "delta", "epsilon"}) {
+		testing.expectf(t, has(ws, w), "%s missing", w)
+	}
+	// The comment ended at the \r: only what follows on its own line counts.
+	testing.expect(t, !has(ws, "# a comment") && !has(ws, "a comment"))
+	testing.expect(t, !has(ws, "alpha\rbeta") && !has(ws, "delta\r"))
+	testing.expect_value(t, len(ws), 19 + 5)
+	// Only carriage returns, one word per line.
+	write(t, cfg, "One\rTwo\rThree")
+	ws2 := prose.load_words_in({}, cfg, skill)
+	defer prose.word_set_destroy(&ws2)
+	testing.expect(t, has(ws2, "one") && has(ws2, "two") && has(ws2, "three"))
+	testing.expect_value(t, len(ws2), 19 + 3)
+}

@@ -43,7 +43,8 @@ load_words :: proc(s: Settings, allocator := context.allocator) -> Word_Set {
 // the reference reads them: one word per line, surrounding whitespace
 // trimmed, blank lines and lines that start with `#` ignored. A file that
 // cannot be read or is not UTF-8 adds nothing; that does not bring the
-// shipped list back in its place. A leading byte order mark is ignored.
+// shipped list back in its place. A leading byte order mark is ignored. A line
+// ends at \n, \r\n or a lone \r.
 load_words_in :: proc(
 	s: Settings,
 	config_dir, skill_dir: string,
@@ -123,8 +124,17 @@ read_dictionary :: proc(words: ^Word_Set, path: string, allocator: runtime.Alloc
 		return
 	}
 	text := strings.trim_prefix(string(data), "\xEF\xBB\xBF")
+	// A line ends at \n, \r\n or a lone \r. The \n of a \r\n ends an empty
+	// line, and an empty line is skipped.
 	rest := text
-	for line in strings.split_lines_iterator(&rest) {
+	for rest != "" {
+		end := strings.index_any(rest, "\r\n")
+		line := rest
+		if end < 0 {
+			rest = ""
+		} else {
+			line, rest = rest[:end], rest[end + 1:]
+		}
 		word := strings.trim_space(line)
 		if word != "" && !strings.has_prefix(word, "#") {
 			word_set_add(words, word, allocator)
