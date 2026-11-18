@@ -452,3 +452,20 @@ mask_allocates_the_link_scratch_only_for_a_link :: proc(t: ^testing.T) {
 	testing.expectf(t, with >= 8 * n, "a text with a link allocated only %d bytes", with)
 	testing.expect_value(t, len(track.allocation_map), 0)
 }
+
+// is_py_word and is_py_decimal answer ASCII without the tables, so the
+// tables' ASCII entries are only checked here, against that fast path.
+@(test)
+py_class_tables_agree_with_the_ascii_fast_path :: proc(t: ^testing.T) {
+	for r in rune(0) ..< 0x80 {
+		in_word, in_decimal := false, false
+		for rng in prose.PY_WORD_RANGES {
+			in_word ||= rng[0] <= r && r <= rng[1]
+		}
+		for rng in prose.PY_DECIMAL_RANGES {
+			in_decimal ||= rng[0] <= r && r <= rng[1]
+		}
+		testing.expectf(t, in_word == prose.is_py_word(r), "U+%04X: word table %v, is_py_word %v", r, in_word, prose.is_py_word(r))
+		testing.expectf(t, in_decimal == prose.is_py_decimal(r), "U+%04X: decimal table %v, is_py_decimal %v", r, in_decimal, prose.is_py_decimal(r))
+	}
+}
