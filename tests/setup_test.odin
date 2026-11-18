@@ -1449,3 +1449,101 @@ a_link_to_a_directory_is_refused_clearly :: proc(t: ^testing.T) {
 		testing.expect_value(t, info.type, os.File_Type.Symlink)
 	}
 }
+
+// A chain of `..` in a link, and a link whose target is not there yet: the
+// target and the directories on its way are made, which is intended, and the
+// link stays a link.
+@(test)
+a_link_with_dot_dots_and_a_dangling_link_are_followed :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		cfg := join(dir, "a", "b", "cfg")
+		defer delete(cfg)
+		testing.expect(t, os.make_directory_all(cfg) == nil)
+		store := join(dir, "a", "store")
+		defer delete(store)
+		testing.expect(t, os.make_directory(store) == nil)
+		target := join(store, "real.json")
+		defer delete(target)
+		put(t, target, `{"languageRule": "keep"}`)
+		link := join(cfg, "config.json")
+		defer delete(link)
+		testing.expect(t, os.symlink("../../store/real.json", link) == nil)
+		c := values(cfg, `{"ignoreWords": ["w"]}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 0)
+		got := read(target)
+		defer delete(got)
+		expect_contains(t, got, `"languageRule": "keep"`)
+		expect_contains(t, got, `"w"`)
+		listing := names(cfg)
+		defer delete(listing)
+		testing.expect_value(t, listing, "config.json")
+
+		// Dangling: nothing at the end of the link, not even its directories.
+		cfg2 := join(dir, "cfg2")
+		defer delete(cfg2)
+		testing.expect(t, os.make_directory(cfg2) == nil)
+		link2 := join(cfg2, "config.json")
+		defer delete(link2)
+		testing.expect(t, os.symlink("../data/nested/real.json", link2) == nil)
+		made := join(dir, "data", "nested", "real.json")
+		defer delete(made)
+		testing.expect(t, !os.exists(made))
+		c2 := values(cfg2, `{"languageRule": "R"}`)
+		defer cli_done(&c2)
+		testing.expect_value(t, c2.code, 0)
+		expect_file(t, made, "{\n  \"languageRule\": \"R\"\n}\n")
+		info, err := os.lstat(link2, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.type, os.File_Type.Symlink)
+		// The directories it made keep the owner to themselves.
+		nested := join(dir, "data", "nested")
+		defer delete(nested)
+		ninfo, nerr := os.stat(nested, context.allocator)
+		defer os.file_info_delete(ninfo, context.allocator)
+		testing.expect(t, nerr == nil)
+		testing.expect_value(t, ninfo.mode, os.perm_number(0o700))
+	}
+}
+
+// The new file replaces the old one and is made 0600, whatever the old mode
+// was: the file names a user name, and the replacement is a new file.
+@(test)
+the_rewritten_file_is_0600_whatever_it_was :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		path := join(dir, "config.json")
+		defer delete(path)
+		put(t, path, `{"languageRule": "keep"}`)
+		testing.expect(t, os.change_mode(path, os.perm_number(0o644)) == nil)
+		c := values(dir, `{"ignoreWords": ["w"]}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 0)
+		info, err := os.stat(path, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.mode, os.perm_number(0o600))
+		// Through a link, the target is the one replaced, and it is 0600 too.
+		store := join(dir, "store.json")
+		defer delete(store)
+		put(t, store, `{}`)
+		testing.expect(t, os.change_mode(store, os.perm_number(0o666)) == nil)
+		link := join(dir, "linked", "config.json")
+		defer delete(link)
+		linked := join(dir, "linked")
+		defer delete(linked)
+		testing.expect(t, os.make_directory(linked) == nil)
+		testing.expect(t, os.symlink(store, link) == nil)
+		c2 := values(linked, `{"languageRule": "R"}`)
+		defer cli_done(&c2)
+		testing.expect_value(t, c2.code, 0)
+		sinfo, serr := os.stat(store, context.allocator)
+		defer os.file_info_delete(sinfo, context.allocator)
+		testing.expect(t, serr == nil)
+		testing.expect_value(t, sinfo.mode, os.perm_number(0o600))
+	}
+}
