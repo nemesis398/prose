@@ -224,7 +224,10 @@ mask_markdown :: proc(src: []rune, allocator := context.allocator) -> Masked {
 	return m
 }
 
-// masked_destroy frees what `mask_markdown` allocated, not `m.src`.
+// masked_destroy frees what `mask_markdown` allocated, not `m.src`. It takes
+// no allocator because `m.segments`, a dynamic array, carries the one it was
+// built with; `annotations_destroy` frees a plain slice, which carries none,
+// and so takes the allocator again.
 masked_destroy :: proc(m: ^Masked) {
 	allocator := m.segments.allocator
 	for s in m.segments {
@@ -269,6 +272,8 @@ annotations_for :: proc(m: ^Masked, lo, hi: int, allocator := context.allocator)
 	return out[:]
 }
 
+// annotations_destroy frees what `annotations_for` returned. Pass the
+// allocator `annotations_for` was given.
 annotations_destroy :: proc(anns: []Annotation, allocator := context.allocator) {
 	for a in anns {
 		delete(a.text, allocator)
