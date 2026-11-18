@@ -172,6 +172,7 @@ function Run-Suite([string]$Name, [string]$Base) {
     Check "install leaves only prose-check.exe in bin/ (got: $($left -join ', '))" (($left.Count -eq 1) -and ($left[0] -eq 'prose-check.exe'))
 
     # 2. unsupported platforms are refused in one line
+    Remove-Item Env:PROCESSOR_ARCHITEW6432 -ErrorAction SilentlyContinue
     foreach ($p in 'SunOS sparc', 'Linux Arm64', 'Windows Arm64', 'Windows X86') {
         New-Root $root
         $env:PROSE_TEST_PLATFORM = $p
@@ -182,6 +183,32 @@ function Run-Suite([string]$Name, [string]$Base) {
         Check "$p leaves bin/ empty" (Dir-Empty $bin)
     }
     $env:PROSE_TEST_PLATFORM = 'Windows X64'
+
+    # 2b. a 32-bit PowerShell on x64 Windows reports X86, and
+    # PROCESSOR_ARCHITEW6432 names the machine. Only the machine's AMD64 turns
+    # X86 into X64; the variable is unset again after each case.
+    $env:PROSE_TEST_PLATFORM = 'Windows X86'
+    New-Root $root
+    $env:PROCESSOR_ARCHITEW6432 = 'AMD64'
+    $r = Invoke-Install $root
+    Check "32-bit PowerShell on x64 Windows: exit 0 (got $($r.Rc): $($r.Out))" ($r.Rc -eq 0)
+    Check '32-bit PowerShell on x64 Windows: bin/prose-check.exe in place' (Test-Path -LiteralPath $exe)
+    New-Root $root
+    $env:PROCESSOR_ARCHITEW6432 = 'ARM64'
+    $r = Invoke-Install $root
+    Check "32-bit PowerShell on ARM64 Windows: refused (rc $($r.Rc))" ($r.Rc -ne 0)
+    Check "32-bit PowerShell on ARM64 Windows: names the process platform (got: $($r.Out))" ($r.Out.Contains('unsupported platform: Windows X86'))
+    New-Root $root
+    Remove-Item Env:PROCESSOR_ARCHITEW6432 -ErrorAction SilentlyContinue
+    $r = Invoke-Install $root
+    Check "32-bit Windows (no PROCESSOR_ARCHITEW6432): refused (rc $($r.Rc))" ($r.Rc -ne 0)
+    Check '32-bit Windows: bin/ empty' (Dir-Empty $bin)
+    $env:PROSE_TEST_PLATFORM = 'Windows X64'
+    New-Root $root
+    $env:PROCESSOR_ARCHITEW6432 = 'AMD64'
+    $r = Invoke-Install $root
+    Remove-Item Env:PROCESSOR_ARCHITEW6432 -ErrorAction SilentlyContinue
+    Check "X64 stays X64 whatever PROCESSOR_ARCHITEW6432 says: exit 0 (got $($r.Rc))" ($r.Rc -eq 0)
 
     # 3. a wrong checksum
     New-Root $root

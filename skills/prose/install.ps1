@@ -69,9 +69,16 @@ function Receive-File([string]$Url, [string]$Out, [string]$Version) {
             # Windows PowerShell 5.1 starts with TLS 1.0 and 1.1 only.
             [System.Net.ServicePointManager]::SecurityProtocol =
                 [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-            # A timeout, so that a stalled connection cannot hang the install. In
-            # PowerShell 7 it bounds the whole transfer, in 5.1 each read.
-            Invoke-WebRequest -Uri $Url -OutFile $Out -UseBasicParsing -TimeoutSec 300 -ErrorAction Stop
+            # Timeouts, so that a stalled connection cannot hang the install.
+            # -TimeoutSec is 300 seconds. In Windows PowerShell 5.1 it bounds
+            # each read and the wait for the response; in PowerShell 7.4 and
+            # later it bounds only the connection, so -OperationTimeoutSeconds
+            # 30 limits the idle time between reads there.
+            $timeouts = @{ TimeoutSec = 300 }
+            if ($PSVersionTable.PSVersion -ge [version]'7.4') {
+                $timeouts.OperationTimeoutSeconds = 30
+            }
+            Invoke-WebRequest -Uri $Url -OutFile $Out -UseBasicParsing @timeouts -ErrorAction Stop
         } else {
             throw 'only https and file URLs are allowed'
         }
@@ -114,6 +121,12 @@ function Install-Prose {
         $osName = if ($isWin) { 'Windows' } elseif ($IsMacOS) { 'macOS' } else { 'Linux' }
         $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
         $platform = "$osName $arch"
+    }
+    # A 32-bit PowerShell on x64 Windows reports X86, but the machine is x64
+    # and runs the x64 binary: Windows names the machine's architecture in
+    # PROCESSOR_ARCHITEW6432 for a process that runs under WOW64.
+    if ($platform -eq 'Windows X86' -and $env:PROCESSOR_ARCHITEW6432 -eq 'AMD64') {
+        $platform = 'Windows X64'
     }
     if ($platform -ne 'Windows X64') { Stop-Install "unsupported platform: $platform" }
 
