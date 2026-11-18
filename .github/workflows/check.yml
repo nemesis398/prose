@@ -179,8 +179,10 @@ jobs:
 
       # What both installers ask of an installed binary, run on the runner
       # itself (for Linux, outside the container it was built in): exactly
-      # the version on stdout, and nothing on stderr, where a loader warning
-      # would show.
+      # the version on stdout, and nothing on stderr. This does not catch the
+      # libcurl loader warning on CI: the runner's libcurl has symbol
+      # versions, so the warning appears only on a system whose libcurl has
+      # none (Fedora, Arch). The readelf step above is the gate for that.
       - name: The binary runs, names the version, and says nothing else
         if: ${{ !cancelled() }}
         shell: bash
