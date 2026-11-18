@@ -2,3 +2,5 @@ skills/prose/bin/
 evals/results/
 *.o
 dist/
+tests.bin
+tests/stub/*.started
