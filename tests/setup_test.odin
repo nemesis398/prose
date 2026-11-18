@@ -677,6 +677,47 @@ the_key_never_goes_in_the_file :: proc(t: ^testing.T) {
 	testing.expect(t, !os.exists(fresh))
 }
 
+// The guard reads a name the way a person would: case, dashes, underscores
+// and dots do not matter, and a name that ends in token, secret or password
+// is a credential whatever comes before.
+@(test)
+the_key_guard_normalizes_names :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	before := `{"languageRule": "keep"}`
+	put(t, path, before)
+	refused := [?]string {
+		"apiKey", "api_key", "api-key", "API.KEY", "Api_Key", "key", "Key", "password", "PassWord", "token", "TOKEN",
+		"secret", "Secret", "apiToken", "api_token", "api-token", "accessToken", "access_token", "access.token", "authToken",
+		"csrf-token", "bearer_token", "refreshToken", "clientSecret", "client_secret", "dbPassword", "db.password", "x-secret",
+	}
+	for name in refused {
+		for shape in ([][2]string{{`{"`, `": "SECRET-KEY"}`}, {`{"languagetool": {"`, `": "SECRET-KEY"}}`}}) {
+			text := strings.concatenate({shape[0], name, shape[1]})
+			defer delete(text)
+			c := values(dir, text)
+			testing.expectf(t, c.code == 2, "%s: exit %d", text, c.code)
+			expect_contains(t, c.err, NEVER_IN_FILE)
+			expect_lacks(t, c.err, "SECRET-KEY")
+			expect_file(t, path, before)
+			cli_done(&c)
+		}
+	}
+	// Names that only look like one pass.
+	passed := [?]string{"keyItem", "keyboard", "keys", "keyring", "monkey", "tokens", "secrets", "passwords", "passphrase", "tokenizer", "secretary", "item"}
+	for name in passed {
+		for shape in ([][2]string{{`{"`, `": "x"}`}, {`{"languagetool": {"`, `": "x"}}`}}) {
+			text := strings.concatenate({shape[0], name, shape[1]})
+			defer delete(text)
+			c := values(dir, text)
+			testing.expectf(t, c.code == 0, "%s: exit %d: %s", text, c.code, c.err)
+			cli_done(&c)
+		}
+	}
+}
+
 @(test)
 a_missing_config_directory_is_created :: proc(t: ^testing.T) {
 	dir := scratch(t)

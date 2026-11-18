@@ -10,6 +10,7 @@ import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
+import "core:unicode"
 
 // `prose-check --setup`: writes the settings file, from the questions on a
 // terminal or from a JSON object on standard input (`--values-stdin`, which
@@ -43,9 +44,11 @@ setup_fail :: proc(path: string, allocator: runtime.Allocator, format: string, a
 // The keys given replace the stored ones; all others are kept, unknown ones
 // with their JSON values. `languagetool` is merged key by key. A key set to
 // `null` is deleted, which is how a backend switch drops `server`; a
-// `languagetool` left empty goes too. A key named `apiKey`, `api_key`,
-// `key`, `password` or `token` (any case), at the top or inside
-// `languagetool`, is refused: the key never goes in the settings file.
+// `languagetool` left empty goes too. A key that is named like a credential
+// (`apiKey`, `api-key`, `key`, `password`, `token`, `secret`, anything that
+// ends in token, secret or password; see `is_key_name`), at the top or
+// inside `languagetool`, is refused: the key never goes in the settings
+// file.
 //
 // The result is stable, pretty JSON: two-space indent, `languageRule`,
 // `ignoreWords`, `languagetool` (`backend`, `server`, `username`,
@@ -159,15 +162,28 @@ has_nonzero_mantissa :: proc(literal: string) -> bool {
 	return false
 }
 
-// is_key_name tells whether `name` is a spelling of the API key's name.
+// is_key_name tells whether `name` is a spelling of a credential's name. The
+// name is read without case, dashes, underscores and dots, so `api-key`,
+// `API.KEY` and `apiKey` are one. It is a credential when that is `apikey`,
+// `key`, `password`, `token`, `secret`, `apitoken` or `accesstoken`, or ends
+// in `token`, `secret` or `password` (`csrf_token`, `clientSecret`). `keyItem`
+// (the name of an rbw item, not a key), `keyboard` and `keys` are not.
 @(private = "file")
 is_key_name :: proc(name: string) -> bool {
-	for secret in ([?]string{"apiKey", "api_key", "key", "password", "token"}) {
-		if strings.equal_fold(name, secret) {
-			return true
+	b := strings.builder_make(context.temp_allocator)
+	for r in name {
+		switch r {
+		case '-', '_', '.':
+		case:
+			strings.write_rune(&b, unicode.to_lower(r))
 		}
 	}
-	return false
+	normal := strings.to_string(b)
+	switch normal {
+	case "apikey", "key", "password", "token", "secret", "apitoken", "accesstoken":
+		return true
+	}
+	return strings.has_suffix(normal, "token") || strings.has_suffix(normal, "secret") || strings.has_suffix(normal, "password")
 }
 
 // apply_object is `apply_values` for values already parsed. It takes the
