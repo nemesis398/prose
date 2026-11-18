@@ -148,6 +148,16 @@ The corpus and its expected findings stay as golden tests, and the Python
 checker left the tree once the port matched it; `tests/README.md` says how the
 goldens were made and where the reference lives in history.
 
+**Two deliberate divergences from the Python checker's interface.** Run with
+no file and without `--stdin`, `prose-check` prints the usage text to stderr
+and exits 2; the Python checker printed it to stdout. Usage on stdout would put
+text in the report channel of a run that checked nothing, and a pipe or a
+`--json` parser would take it for a report. `--help` still prints to stdout and
+exits 0. And an option must be spelled out: argparse accepted `--no` for
+`--no-lt` and `--std` for `--stdin`, but an unknown option now exits 2. An
+abbreviation that is unambiguous today becomes ambiguous the day a flag is
+added, and a script written against it breaks then.
+
 **The settings live in one file of its own**, `config.json` under
 `$XDG_CONFIG_HOME/prose/`. Claude Code's plugin settings were weighed and
 rejected: they reach a skill's text but not a program it runs, and a copied
