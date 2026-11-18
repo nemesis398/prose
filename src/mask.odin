@@ -182,6 +182,8 @@ mask_markdown :: proc(src: []rune, allocator := context.allocator) -> Masked {
 				p += 1
 				continue
 			}
+			// A scanner that matched but did not advance would loop forever.
+			assert(end > p, "a mask scanner matched without advancing")
 			free := true
 			for i in p ..< end {
 				if m.is_markup[i] {
