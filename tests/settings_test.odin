@@ -218,20 +218,39 @@ a_json_error_names_the_line_and_the_column :: proc(t: ^testing.T) {
 	expect_unusable(t, `{"a": }`, "Unexpected_Token")
 }
 
-// Strict JSON, as Python reads it: a trailing comma is an error, and so is a
-// key given twice.
+// v0.1.0 took a trailing comma, so a file with one keeps working: the values
+// are read and the place is noted for --selftest. A key given twice was
+// refused by v0.1.0 already (the parser does it), and still is.
 @(test)
-a_trailing_comma_is_refused_and_a_duplicate_key_too :: proc(t: ^testing.T) {
-	expect_unusable(t, `{"languageRule": "r",}`, "trailing comma at line 1, column 21")
-	expect_unusable(t, `{"languagetool": {"backend": "public",}}`, "trailing comma")
-	expect_unusable(t, `{"ignoreWords": ["a",]}`, "trailing comma at line 1, column 21")
-	expect_unusable(t, `{"x": [1, 2,], "y": 1}`, "is not valid JSON")
-	expect_unusable(t, "{\n  \"a\": 1,\n}\n", "trailing comma at line 2, column 9")
-	// A comma inside a string is no trailing comma.
-	s, err, path, dir := load(t, `{"languageRule": ",}", "ignoreWords": ["a,]"]}`)
+a_trailing_comma_is_accepted_with_its_place_and_a_duplicate_key_is_refused :: proc(t: ^testing.T) {
+	Case :: struct {
+		content, at: string,
+	}
+	for c in ([]Case {
+			{`{"languageRule": "r",}`, "line 1, column 21"},
+			{`{"languagetool": {"backend": "public",}}`, "line 1, column 38"},
+			{`{"ignoreWords": ["a",]}`, "line 1, column 21"},
+			{"{\n  \"a\": 1,\n}\n", "line 2, column 9"},
+			{`{"x": [1, 2,], "y": 1}`, "line 1, column 12"},
+		}) {
+		s, err, path, dir := load(t, c.content)
+		defer load_done(&s, &err, path, dir)
+		testing.expectf(t, err.problem == "", "%q: %q", c.content, err.problem)
+		testing.expectf(t, s.trailing_comma == c.at, "%q: at %q, want %q", c.content, s.trailing_comma, c.at)
+	}
+	s, err, path, dir := load(t, `{"ignoreWords": ["a", "b",], "languageRule": "r"}`)
 	defer load_done(&s, &err, path, dir)
 	testing.expect_value(t, err.problem, "")
-	testing.expect_value(t, s.language_rule, ",}")
+	testing.expect_value(t, len(s.ignore_words), 2)
+	testing.expect_value(t, s.language_rule, "r")
+	// A comma inside a string is no trailing comma, and nothing is noted.
+	s2, err2, path2, dir2 := load(t, `{"languageRule": ",}", "ignoreWords": ["a,]"]}`)
+	defer load_done(&s2, &err2, path2, dir2)
+	testing.expect_value(t, err2.problem, "")
+	testing.expect_value(t, s2.language_rule, ",}")
+	testing.expect_value(t, s2.trailing_comma, "")
+	// Only a comma before the end is tolerated: two in a row are not.
+	expect_unusable(t, `{"a": 1,,}`, "is not valid JSON")
 	// Duplicate keys, at the top and inside "languagetool".
 	expect_unusable(t, `{"languageRule": "a", "languageRule": "b"}`, "duplicate key")
 	expect_unusable(t, `{"languagetool": {"backend": "none", "backend": "public"}}`, "duplicate key")

@@ -595,6 +595,10 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 		}
 		_, _ = io.write_string(w, "\n")
 	}
+	if s.trailing_comma != "" {
+		selftest_label(w, "trailing comma")
+		fmt.wprintf(w, "%s (accepted; --setup writes strict JSON)\n", s.trailing_comma)
+	}
 	_, _ = io.write_string(w, "\n")
 
 	selftest_heading(w, "Backend", color)

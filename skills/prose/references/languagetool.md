@@ -40,7 +40,8 @@ means no settings.
 naming the file and the problem: invalid JSON, a key of the wrong type, an
 unknown `backend` such as `"premuim"`, or `server` without a URL. Reading such
 a file as "no settings" would turn Premium off after one typo while every run
-stayed green. An unknown key is ignored, and `--selftest` lists it.
+stayed green. An unknown key is ignored, and `--selftest` lists it. A comma
+before a closing brace or bracket is read too, and `--selftest` notes it.
 
 `prose-check --setup --values-stdin` merges a JSON object into the file: the
 keys given replace the stored ones, a key set to `null` is deleted, and the

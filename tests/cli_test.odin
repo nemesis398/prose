@@ -474,6 +474,28 @@ selftest_shows_the_url_it_made_of_a_variable_without_a_scheme :: proc(t: ^testin
 	testing.expect_value(t, bad.code, 2)
 }
 
+// A trailing comma in config.json worked in v0.1.0. The file is read, the
+// check runs, and --selftest says where the comma is and how to repair it.
+@(test)
+a_trailing_comma_in_the_file_is_noted_by_selftest_only :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	cfg := put(t, dir, "config.json", transmute([]byte)string(`{"languageRule": "Notes in German.", "ignoreWords":["a",]}`))
+	defer delete(cfg)
+	c := cli({"--selftest"}, {config_dir = dir, skill_dir = SKILL})
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 0)
+	want := "  trailing comma: line 1, column 56 (accepted; --setup writes strict JSON)\n"
+	testing.expectf(t, strings.contains(c.out, want), "lacks %q in:\n%s", want, c.out)
+	testing.expect(t, strings.contains(c.out, "ignoreWords   : 1 words"), c.out)
+	// Every other command reads the file and says nothing of the comma.
+	r := cli({"--rules"}, {config_dir = dir})
+	defer cli_done(&r)
+	testing.expect_value(t, r.code, 0)
+	testing.expect(t, strings.contains(r.out, "Notes in German."), r.out)
+	testing.expect_value(t, r.err, "")
+}
+
 // --selftest on a broken file, and on Premium without a key: exit 2, the
 // problem shown, nothing probed. The key is never printed.
 @(test)

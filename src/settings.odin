@@ -29,6 +29,9 @@ Backend_Kind :: enum {
 // `ignore_words` are trimmed, with blank entries dropped. `unknown_keys`
 // lists the keys the checker does not know, sorted, nested ones as
 // "languagetool.NAME"; `--selftest` notes them, nothing else does.
+// `trailing_comma` is where the file has a comma before a closing brace or
+// bracket ("line 3, column 9"), which JSON forbids and v0.1.0 took, so it is
+// read; "" when there is none. `--selftest` notes it.
 Settings :: struct {
 	path:             string,
 	language_rule:    string,
@@ -37,6 +40,7 @@ Settings :: struct {
 	server, username: string,
 	key_item:         string,
 	unknown_keys:     []string,
+	trailing_comma:   string,
 }
 
 // Why a settings file cannot be used. An empty `problem` means no error.
@@ -183,6 +187,7 @@ settings_destroy :: proc(s: ^Settings, allocator := context.allocator) {
 	delete(s.server, allocator)
 	delete(s.username, allocator)
 	delete(s.key_item, allocator)
+	delete(s.trailing_comma, allocator)
 	for k in s.unknown_keys {
 		delete(k, allocator)
 	}
@@ -338,7 +343,7 @@ parse_settings :: proc(
 		return
 	}
 	defer delete(data, allocator)
-	root, kind, detail := parse_json_object(string(data), allocator)
+	root, kind, detail, comma := parse_json_object(string(data), allocator)
 	defer json.destroy_value(root, allocator)
 	switch kind {
 	case .None:
@@ -354,7 +359,11 @@ parse_settings :: proc(
 		return
 	}
 	obj := root.(json.Object)
-	return read_settings(obj, path, false, allocator)
+	s, err = read_settings(obj, path, false, allocator)
+	if err.problem == "" && comma != "" {
+		s.trailing_comma = strings.clone(comma, allocator)
+	}
+	return
 }
 
 // read_settings reads the settings from the parsed object `obj`. `path`
@@ -442,9 +451,11 @@ Json_Problem :: enum {
 }
 
 // parse_json_object parses `text` as one JSON object and nothing after it.
-// A byte order mark is skipped. The text is strict JSON: core:encoding/json
-// takes a trailing comma in an object or a list, and this refuses it, as
-// Python's json does. A key given twice is refused by the parser.
+// A byte order mark is skipped. A comma before a closing brace or bracket
+// is taken, as core:encoding/json takes it and v0.1.0 did, and `comma` says
+// where the first one is ("line L, column C", `context.temp_allocator`; ""
+// when there is none). A key given twice is refused by the parser, as it
+// was in v0.1.0.
 //
 // On a problem `root` is nil (everything is freed) and `detail` says what
 // and where, with the line and the column; it is allocated with
@@ -454,7 +465,7 @@ Json_Problem :: enum {
 // Numbers are parsed as integers where they are integers, as the parser
 // reads them.
 @(private)
-parse_json_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
+parse_json_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail, comma: string) {
 	body := strings.trim_prefix(text, "\xEF\xBB\xBF")
 	// A parser of our own rather than `json.parse`, which stops after the
 	// first value and would let anything after it through.
@@ -464,23 +475,22 @@ parse_json_object :: proc(text: string, allocator: runtime.Allocator) -> (root: 
 		// The offending token is the one the parser has just stepped over.
 		where_ := position_text(body, parser.prev_token.offset)
 		if jerr == .Duplicate_Object_Key {
-			return nil, .Syntax, fmt.tprintf("duplicate key, near %s", where_)
+			return nil, .Syntax, fmt.tprintf("duplicate key, near %s", where_), ""
 		}
-		return nil, .Syntax, fmt.tprintf("%v at %s", jerr, where_)
+		return nil, .Syntax, fmt.tprintf("%v at %s", jerr, where_), ""
 	}
 	if parser.curr_token.kind != .EOF {
 		json.destroy_value(value, allocator)
-		return nil, .Syntax, fmt.tprintf("text after the end of the value, at %s", position_text(body, parser.curr_token.offset))
+		return nil, .Syntax, fmt.tprintf("text after the end of the value, at %s", position_text(body, parser.curr_token.offset)), ""
 	}
 	if offset, found := find_trailing_comma(body); found {
-		json.destroy_value(value, allocator)
-		return nil, .Syntax, fmt.tprintf("trailing comma at %s, which JSON does not allow", position_text(body, offset))
+		comma = position_text(body, offset)
 	}
 	if _, is_obj := value.(json.Object); !is_obj {
 		json.destroy_value(value, allocator)
-		return nil, .Not_Object, ""
+		return nil, .Not_Object, "", ""
 	}
-	return value, .None, ""
+	return value, .None, "", comma
 }
 
 // position_text is "line L, column C" for the byte `offset` of `text`,

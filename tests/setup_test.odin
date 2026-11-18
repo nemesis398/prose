@@ -685,8 +685,11 @@ setup_and_the_checker_word_a_non_object_alike :: proc(t: ^testing.T) {
 	expect_contains(t, err.problem, "must be a JSON object")
 }
 
+// v0.1.0 took a trailing comma in the values and in the stored file, so
+// both still go in, and setup writes strict JSON: a run repairs the comma. A
+// duplicate key was refused by v0.1.0 too and is still, with its place.
 @(test)
-a_trailing_comma_or_a_duplicate_key_is_refused_with_its_place :: proc(t: ^testing.T) {
+a_trailing_comma_is_accepted_and_repaired_and_a_duplicate_key_is_refused :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
 	path := join(dir, "config.json")
@@ -694,19 +697,29 @@ a_trailing_comma_or_a_duplicate_key_is_refused_with_its_place :: proc(t: ^testin
 	put(t, path, `{"languageRule": "keep"}`)
 	c := values(dir, `{"languageRule": "R",}`)
 	defer cli_done(&c)
-	testing.expect_value(t, c.code, 2)
-	expect_contains(t, c.err, "the values on standard input are not valid JSON (trailing comma at line 1, column 21")
+	testing.expect_value(t, c.code, 0)
+	expect_file(t, path, "{\n  \"languageRule\": \"R\"\n}\n")
 	c2 := values(dir, `{"languageRule": "R", "languageRule": "S"}`)
 	defer cli_done(&c2)
 	testing.expect_value(t, c2.code, 2)
 	expect_contains(t, c2.err, "duplicate key")
-	// The same faults in the stored file are the file's.
-	put(t, path, "{\n  \"languageRule\": \"r\",\n}\n")
-	c3 := values(dir, `{"languageRule": "R"}`)
+	// A stored file with a trailing comma is read, merged and written strict.
+	put(t, path, "{\n  \"languageRule\": \"r\",\n  \"ignoreWords\": [\"a\",],\n}\n")
+	c3 := values(dir, `{"languagetool": {"backend": "public"}}`)
 	defer cli_done(&c3)
-	testing.expect_value(t, c3.code, 2)
-	expect_contains(t, c3.err, cat(path, ": is not valid JSON (trailing comma at line 2, column 22"))
-	expect_file(t, path, "{\n  \"languageRule\": \"r\",\n}\n")
+	testing.expect_value(t, c3.code, 0)
+	expect_file(
+		t,
+		path,
+		"{\n  \"languageRule\": \"r\",\n  \"ignoreWords\": [\n    \"a\"\n  ],\n  \"languagetool\": {\n    \"backend\": \"public\"\n  }\n}\n",
+	)
+	// A stored duplicate key is still the file's fault, and the file stays.
+	put(t, path, `{"languageRule": "a", "languageRule": "b"}`)
+	c4 := values(dir, `{"languageRule": "R"}`)
+	defer cli_done(&c4)
+	testing.expect_value(t, c4.code, 2)
+	expect_contains(t, c4.err, cat(path, ": is not valid JSON (duplicate key"))
+	expect_file(t, path, `{"languageRule": "a", "languageRule": "b"}`)
 }
 
 // What setup does not know it keeps as it was. Numbers used to pass through

@@ -86,7 +86,7 @@ apply_values :: proc(path, values_json: string, allocator := context.allocator) 
 // "... a number ...".
 @(private = "file")
 parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
-	root, kind, detail = parse_json_object(text, allocator)
+	root, kind, detail, _ = parse_json_object(text, allocator)
 	if kind != .None {
 		return
 	}

@@ -68,6 +68,10 @@ stored value as its first option:
 cat "${XDG_CONFIG_HOME:-$HOME/.config}/prose/config.json" 2>/dev/null || echo "no settings file yet"
 ```
 
+A comma before a closing brace or bracket, as in `{"ignoreWords": ["a",]}`,
+is not an error: the checker reads such a file, `--selftest` notes it, and
+setup takes it as input and writes the file back without the comma.
+
 Then run `"<bin>" --rules`. If it exits 2, the file is broken, and the line
 it printed says how:
 
