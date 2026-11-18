@@ -1,5 +1,6 @@
 package prose_tests
 
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -205,6 +206,86 @@ a_file_that_is_present_but_unusable_is_an_error_naming_it :: proc(t: ^testing.T)
 	)
 }
 
+// A JSON error says where it is. Columns count bytes from 1, lines from 1.
+@(test)
+a_json_error_names_the_line_and_the_column :: proc(t: ^testing.T) {
+	expect_unusable(t, "{\n  \"a\": }", "line 2, column 8")
+	expect_unusable(t, `{"a": 1} x`, "line 1, column 10")
+	expect_unusable(t, "{\"a\": 1,\n\n  \"b\" 2}", "line 3")
+	expect_unusable(t, `{`, "line 1")
+	expect_unusable(t, ``, "line 1, column 1")
+	// The error kind stays in the message too.
+	expect_unusable(t, `{"a": }`, "Unexpected_Token")
+}
+
+// Strict JSON, as Python reads it: a trailing comma is an error, and so is a
+// key given twice.
+@(test)
+a_trailing_comma_is_refused_and_a_duplicate_key_too :: proc(t: ^testing.T) {
+	expect_unusable(t, `{"languageRule": "r",}`, "trailing comma at line 1, column 21")
+	expect_unusable(t, `{"languagetool": {"backend": "public",}}`, "trailing comma")
+	expect_unusable(t, `{"ignoreWords": ["a",]}`, "trailing comma at line 1, column 21")
+	expect_unusable(t, `{"x": [1, 2,], "y": 1}`, "is not valid JSON")
+	expect_unusable(t, "{\n  \"a\": 1,\n}\n", "trailing comma at line 2, column 9")
+	// A comma inside a string is no trailing comma.
+	s, err, path, dir := load(t, `{"languageRule": ",}", "ignoreWords": ["a,]"]}`)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, err.problem, "")
+	testing.expect_value(t, s.language_rule, ",}")
+	// Duplicate keys, at the top and inside "languagetool".
+	expect_unusable(t, `{"languageRule": "a", "languageRule": "b"}`, "duplicate key")
+	expect_unusable(t, `{"languagetool": {"backend": "none", "backend": "public"}}`, "duplicate key")
+}
+
+@(test)
+the_server_url_is_checked_where_it_is_used_and_in_any_case :: proc(t: ^testing.T) {
+	// The scheme is case-insensitive, as libcurl reads it.
+	for url in ([?]string{"HTTPS://lt.example.org", "Http://localhost:8081", "hTTps://x"}) {
+		content := strings.concatenate({`{"languagetool": {"backend": "server", "server": "`, url, `"}}`})
+		defer delete(content)
+		s, err, path, dir := load(t, content)
+		defer load_done(&s, &err, path, dir)
+		testing.expectf(t, err.problem == "" && s.server == url, "%q: %q", url, err.problem)
+	}
+	// A URL no backend uses is not checked: a stale value does not break a
+	// file that has moved to another backend, or has none.
+	for content in ([?]string {
+			`{"languagetool": {"backend": "public", "server": "lt.example.org"}}`,
+			`{"languagetool": {"backend": "premium", "server": "ftp://x"}}`,
+			`{"languagetool": {"backend": "none", "server": "x"}}`,
+			`{"languagetool": {"server": "lt.example.org"}}`,
+		}) {
+		s, err, path, dir := load(t, content)
+		defer load_done(&s, &err, path, dir)
+		testing.expectf(t, err.problem == "", "%s: %q", content, err.problem)
+	}
+	// Used by the server backend, a bad scheme is an error.
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server", "server": "ftp://lt.example.org"}}`,
+		`must start with http:// or https://`,
+	)
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server", "server": "httpx://lt.example.org"}}`,
+		`must start with http:// or https://`,
+	)
+}
+
+@(test)
+load_settings_remembers_the_path_it_read :: proc(t: ^testing.T) {
+	s, err, path, dir := load(t, `{}`)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, s.path, path)
+	// A missing file is no settings, and still knows where it would be.
+	gone, _ := os.join_path({dir, "gone.json"}, context.allocator)
+	defer delete(gone)
+	s2, err2 := prose.load_settings(gone)
+	defer prose.settings_destroy(&s2)
+	testing.expect_value(t, err2.problem, "")
+	testing.expect_value(t, s2.path, gone)
+}
+
 @(test)
 a_file_that_is_too_big_or_not_a_file_is_an_error :: proc(t: ^testing.T) {
 	dir := scratch(t)
@@ -374,6 +455,69 @@ without_a_file_the_variables_count_as_a_choice :: proc(t: ^testing.T) {
 	}
 }
 
+// The precedence table of the design: the file's backend wins, and the
+// variables only fill in its values, or, with no backend in the file, choose
+// it only when they are complete. These rows were untested.
+
+// premium in the file, a server in the environment: still premium. The
+// server variable is no part of that backend.
+@(test)
+premium_in_the_file_ignores_a_server_in_the_environment :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "file-user",
+	}
+	b, problem := choose(t, s, {server = "https://env.example.org", api_key = "ENV-KEY"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.Premium)
+	testing.expect_value(t, b.url, "https://api.languagetoolplus.com")
+	testing.expect_value(t, b.username, "file-user")
+	testing.expect_value(t, b.key, "ENV-KEY")
+	testing.expect_value(t, b.label, "premium cloud")
+}
+
+// server in the file, a key and an account in the environment: still the
+// server, whose text stays on it; a self-hosted server gets neither.
+@(test)
+server_in_the_file_ignores_a_key_and_an_account_in_the_environment :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend = prose.Backend_Kind.Server,
+		server  = "https://file.example.org",
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY", username = "env-user"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.Server)
+	testing.expect_value(t, b.url, "https://file.example.org")
+	testing.expect_value(t, b.username, "")
+	testing.expect_value(t, b.key, "")
+	testing.expect_value(t, b.label, "self-hosted")
+}
+
+// No backend in the file: a key in the environment and an account in the
+// file are not "the variables together", so there is no choice. The file's
+// other values do not choose a backend either.
+@(test)
+without_a_backend_a_key_in_the_environment_and_an_account_in_the_file_choose_nothing :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		username = "file-user",
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+	testing.expect(t, b.url == "" && b.key == "" && b.username == "")
+	kind, from := prose.backend_kind(s, {api_key = "ENV-KEY"})
+	testing.expect_value(t, kind, prose.Backend_Kind.None)
+	testing.expect_value(t, from, "the default")
+	// With the account in the environment as well, it is premium.
+	b2, problem2 := choose(t, s, {api_key = "ENV-KEY", username = "env-user"}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, b2.kind, prose.Backend_Kind.Premium)
+	testing.expect_value(t, b2.username, "env-user")
+}
+
 @(test)
 a_server_variable_beats_the_files_server :: proc(t: ^testing.T) {
 	s := prose.Settings {
@@ -390,6 +534,73 @@ a_server_variable_beats_the_files_server :: proc(t: ^testing.T) {
 	b3, problem3 := choose(t, {backend = prose.Backend_Kind.Server}, {}, {})
 	defer done(&b3, problem3)
 	testing.expect(t, problem3 != "" && strings.contains(problem3, "LANGUAGETOOL_SERVER"))
+}
+
+@(test)
+a_server_url_is_checked_wherever_it_comes_from :: proc(t: ^testing.T) {
+	// From the variable: the message names the variable, not the file, and
+	// not the value, which may hold a login.
+	s := prose.Settings {
+		path    = "/x/prose/config.json",
+		backend = prose.Backend_Kind.Server,
+		server  = "https://file.example.org",
+	}
+	b, problem := choose(t, s, {server = "user:secret@lt.example.org"}, {})
+	defer done(&b, problem)
+	testing.expect(t, b.kind == .None && b.url == "")
+	testing.expect(t, strings.contains(problem, "LANGUAGETOOL_SERVER"), problem)
+	testing.expect(t, strings.contains(problem, "http:// or https://"), problem)
+	testing.expect(t, !strings.contains(problem, "secret"), problem)
+	testing.expect(t, !strings.contains(problem, "/x/prose/config.json"), problem)
+	// A good variable beats a bad file value: only the chosen URL is checked.
+	bad_file := s
+	bad_file.server = "lt.example.org"
+	b2, problem2 := choose(t, bad_file, {server = "https://env.example.org"}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, problem2, "")
+	testing.expect_value(t, b2.url, "https://env.example.org")
+	// From the file: the message names the file by its whole path.
+	b3, problem3 := choose(t, bad_file, {}, {})
+	defer done(&b3, problem3)
+	testing.expect(t, strings.contains(problem3, "\"languagetool.server\""), problem3)
+	testing.expect(t, strings.contains(problem3, "/x/prose/config.json"), problem3)
+	testing.expect(t, b3.kind == .None && b3.url == "")
+	// The scheme is not case-sensitive here either.
+	b4, problem4 := choose(t, {}, {server = "HTTPS://lt.example.org"}, {})
+	defer done(&b4, problem4)
+	testing.expect_value(t, problem4, "")
+	testing.expect_value(t, b4.url, "HTTPS://lt.example.org")
+	// The variable alone chooses the server backend, and is checked too.
+	b5, problem5 := choose(t, {}, {server = "lt.example.org"}, {})
+	defer done(&b5, problem5)
+	testing.expect(t, strings.contains(problem5, "LANGUAGETOOL_SERVER"), problem5)
+}
+
+@(test)
+the_problems_of_the_backend_choice_name_the_settings_file_by_its_path :: proc(t: ^testing.T) {
+	PATH :: "/x/prose/config.json"
+	// No URL.
+	b, problem := choose(t, {path = PATH, backend = prose.Backend_Kind.Server}, {}, {})
+	defer done(&b, problem)
+	testing.expect(t, strings.contains(problem, PATH), problem)
+	// No account.
+	b2, problem2 := choose(t, {path = PATH, backend = prose.Backend_Kind.Premium}, {api_key = "k"}, {})
+	defer done(&b2, problem2)
+	testing.expect(t, strings.contains(problem2, PATH), problem2)
+	// No key and no item.
+	b3, problem3 := choose(t, {path = PATH, backend = prose.Backend_Kind.Premium, username = "u"}, {}, {})
+	defer done(&b3, problem3)
+	testing.expect(t, strings.contains(problem3, PATH), problem3)
+	// Settings built by hand have no path and say "config.json".
+	b4, problem4 := choose(t, {backend = prose.Backend_Kind.Server}, {}, {})
+	defer done(&b4, problem4)
+	testing.expect(t, strings.contains(problem4, "in config.json"), problem4)
+	// The same through a loaded file.
+	s, err, path, dir := load(t, `{"languagetool": {"backend": "premium", "username": "u"}}`)
+	defer load_done(&s, &err, path, dir)
+	b5, problem5 := choose(t, s, {}, {})
+	defer done(&b5, problem5)
+	testing.expect(t, strings.contains(problem5, path), problem5)
 }
 
 @(test)
@@ -564,6 +775,32 @@ a_credentials_file_wider_than_600_is_refused :: proc(t: ^testing.T) {
 	testing.expect(t, problem == "" && b.key == "ENV-KEY")
 }
 
+// The credentials file is opened once and checked on that descriptor. A FIFO
+// in its place is no regular file and must not make the open wait for a writer.
+@(test)
+a_fifo_as_the_credentials_file_is_no_key_and_no_hang :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	dir := scratch(t)
+	defer scratch_done(dir)
+	fifo, _ := os.join_path({dir, "credentials"}, context.allocator)
+	defer delete(fifo)
+	state, _, _, perr := os.process_exec(os.Process_Desc{command = {"mkfifo", fifo}}, context.allocator)
+	if perr != nil || !state.success {
+		return // no mkfifo here: nothing to test
+	}
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+	}
+	start := time.tick_now()
+	b, problem := choose(t, s, {}, {credentials_path = fifo})
+	defer done(&b, problem)
+	testing.expect(t, b.key == "" && strings.contains(problem, "has no key"), problem)
+	testing.expectf(t, time.tick_since(start) < 5 * time.Second, "took %v", time.tick_since(start))
+}
+
 @(test)
 no_key_anywhere_names_the_three_sources :: proc(t: ^testing.T) {
 	dir := scratch(t)
@@ -592,7 +829,7 @@ no_key_anywhere_names_the_three_sources :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(problem2, "LANGUAGETOOL_API_KEY"), problem2)
 	want2 := strings.concatenate(
 		{
-			`LanguageTool Premium has no key: set LANGUAGETOOL_API_KEY, or use an rbw item named in "languagetool.keyItem", or put the key alone in `,
+			`LanguageTool Premium has no key: set LANGUAGETOOL_API_KEY, or use an rbw item named in "languagetool.keyItem" in config.json, or put the key alone in `,
 			cred,
 			" (mode 600)",
 		},
@@ -615,6 +852,56 @@ the_key_is_not_read_from_the_settings_file :: proc(t: ^testing.T) {
 	defer done(&b, problem)
 	testing.expect(t, b.key == "" && problem != "")
 	testing.expect(t, !strings.contains(problem, "IN-THE-FILE"))
+}
+
+// An accidental print of a Backend, of the options that carry it, or of the
+// environment must not show a key. Any verb, any depth, by value or by
+// pointer.
+@(test)
+a_printed_backend_does_not_show_the_key :: proc(t: ^testing.T) {
+	SECRET :: "SECRET-KEY-0123456789"
+	b := prose.Backend {
+		kind     = .Premium,
+		url      = "https://api.languagetoolplus.com",
+		username = "me",
+		key      = SECRET,
+		label    = "premium cloud",
+	}
+	opts := prose.Check_Options {
+		lang    = "en",
+		use_lt  = true,
+		backend = b,
+	}
+	env := prose.Env {
+		server   = "https://lt.example.org",
+		username = "me",
+		api_key  = SECRET,
+	}
+	run_env := prose.Run_Env {
+		lt = env,
+	}
+	list := []prose.Backend{b, b}
+	for verb in ([]string{"%v", "%+v", "%#v", "%w", "%s"}) {
+		for arg, i in ([]any{b, &b, opts, &opts, env, &env, run_env, &run_env, list, [1]prose.Backend{b}}) {
+			text := fmt.aprintf(verb, arg)
+			defer delete(text)
+			testing.expectf(t, !strings.contains(text, SECRET), "%s of argument %d shows the key: %s", verb, i, text)
+			testing.expectf(t, !strings.contains(text, "0123456789"), "%s of argument %d shows part of the key", verb, i)
+		}
+	}
+	// It still says what is useful: the rest of the backend, and that a key is there.
+	text := fmt.aprintf("%v", b)
+	defer delete(text)
+	testing.expect(t, strings.contains(text, "https://api.languagetoolplus.com"), text)
+	testing.expect(t, strings.contains(text, "me"), text)
+	testing.expect(t, strings.contains(text, "<redacted>"), text)
+	// No key, nothing to hide, and nothing claimed.
+	none := fmt.aprintf("%v", prose.Backend{kind = .Public, url = "https://x"})
+	defer delete(none)
+	testing.expect(t, !strings.contains(none, "<redacted>"), none)
+	// The key itself is unchanged: only the printing is.
+	testing.expect_value(t, b.key, SECRET)
+	testing.expect_value(t, opts.backend.key, SECRET)
 }
 
 @(test)
@@ -677,6 +964,26 @@ command_output_reports_success_failure_and_absence :: proc(t: ^testing.T) {
 	defer delete(out6)
 	testing.expect(t, ok6 && string(out6) == "hi\n")
 	testing.expect(t, time.tick_since(start) < 2 * time.Second)
+}
+
+// A child that writes far more than a pipe holds (64 KiB) used to block on
+// its write while `command_output` waited for it to exit, until the timeout
+// killed it. The output is read while waiting now, and the cap applies.
+@(test)
+command_output_keeps_the_first_64_kib_of_a_bigger_output :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	start := time.tick_now()
+	out, ok := prose.command_output({"sh", "-c", "head -c 204800 /dev/zero | tr '\\0' x"}, 10 * time.Second, true)
+	defer delete(out)
+	testing.expect(t, ok)
+	testing.expect_value(t, len(out), 64 << 10)
+	testing.expectf(t, time.tick_since(start) < 5 * time.Second, "took %v", time.tick_since(start))
+	if len(out) > 0 {
+		testing.expect_value(t, out[0], 'x')
+		testing.expect_value(t, out[len(out) - 1], 'x')
+	}
 }
 
 // ---------------------------------------------------------------------------

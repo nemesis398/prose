@@ -15,7 +15,10 @@ import "core:unicode/utf8"
 // suggestion.
 
 // How long hunspell may take for a whole text; a large file is a few
-// seconds, so this only catches a hung process.
+// seconds, so this only catches a hung process. It is 60 s on purpose, where
+// the reference allowed 30: the pass is all or nothing (a run that is cut off
+// gives no findings at all, not the ones found so far), so a slow machine
+// with a big file gets the longer time rather than a silent miss.
 HUNSPELL_TIMEOUT :: 60 * time.Second
 
 // The most hunspell's answer may hold. It prints about 100 bytes for each
@@ -33,21 +36,10 @@ hunspell_program :: proc() -> string {
 	return "hunspell"
 }
 
-// run_hunspell runs the local spelling pass with `hunspell_program`. See
-// `run_hunspell_with`.
-run_hunspell :: proc(
-	src: []rune,
-	m: ^Masked,
-	blocks: []Block,
-	starts: []int,
-	words: Word_Set,
-	allocator := context.allocator,
-) -> [dynamic]Finding {
-	return run_hunspell_with(hunspell_program(), HUNSPELL_TIMEOUT, src, m, blocks, starts, words, allocator)
-}
-
-// run_hunspell_with is `run_hunspell` with the program and the time it may
-// take given.
+// run_hunspell_with runs the local spelling pass with the program `command`,
+// which may take `timeout` for the whole text. The caller chooses the
+// program (`hunspell_program` is the default); `check_text` is the one place
+// that does.
 //
 // The input is the masked text: every character that is markup, or that is
 // not in an English block, becomes a space, and the line breaks stay, so a
@@ -77,9 +69,9 @@ run_hunspell :: proc(
 //
 // On Windows the pass does nothing and starts no process, so backend `none`
 // checks no spelling there. `command_with_input` cannot bound the run on
-// Windows when hunspell is a wrapper whose own child holds the pipe: the
-// writer thread then blocks in a write that nothing ends, and the checker
-// would hang with it.
+// Windows when hunspell is a wrapper whose own child holds the pipe and the
+// text is bigger than the pipe buffer: the writer thread then blocks in a
+// write that nothing ends, and the checker would hang with it.
 run_hunspell_with :: proc(
 	command: string,
 	timeout: time.Duration,

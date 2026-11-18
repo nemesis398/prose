@@ -6,8 +6,6 @@ import "core:fmt"
 import "core:os"
 import "core:slice"
 import "core:strings"
-import "core:sync"
-import "core:thread"
 import "core:time"
 
 // Which LanguageTool the grammar pass talks to, if any. `None` sends
@@ -24,12 +22,15 @@ Backend_Kind :: enum {
 // reads as the zero `Settings`. Everything in it is allocated with the
 // allocator given to `load_settings` and freed by `settings_destroy`.
 //
-// `backend` is nil when the file does not name one, which is not the same as
+// `path` is the file `load_settings` was given, "" when the settings were
+// built by hand; the messages of `choose_backend` name it. `backend` is nil
+// when the file does not name one, which is not the same as
 // `.None`: without a choice in the file the exported variables count.
 // `ignore_words` are trimmed, with blank entries dropped. `unknown_keys`
 // lists the keys the checker does not know, sorted, nested ones as
 // "languagetool.NAME"; `--selftest` notes them, nothing else does.
 Settings :: struct {
+	path:             string,
 	language_rule:    string,
 	ignore_words:     []string,
 	backend:          Maybe(Backend_Kind),
@@ -48,18 +49,21 @@ Settings_Error :: struct {
 	path, problem: string,
 }
 
-// The three LanguageTool variables, read once. Empty means unset.
+// The three LanguageTool variables, read once. Empty means unset. A print
+// of it shows `<redacted>` for the key too.
 // `env_from_os` allocates; free with `env_destroy`.
 Env :: struct {
 	server, username, api_key: string,
 }
 
-// The chosen backend. `url` is the endpoint with no path (`/v2/check` is for
+// The chosen backend. A print of it, with any verb and at any depth (the
+// options and the environment carry one), shows `<redacted>` where the key
+// is: see `register_secret_formatters`. `url` is the endpoint with no path (`/v2/check` is for
 // the client to add). `username` and `key` are set for `.Premium` only: the
 // public server and a self-hosted one get neither. `label` names the
 // backend in a message: "free cloud", "premium cloud" or "self-hosted", the
 // reference's words. A `.None` backend is all empty. The key lives here and
-// nowhere else; nothing in this package prints it. Strings are allocated
+// nowhere else; nothing in this package prints it, and no print can. Strings are allocated
 // with the allocator given to `choose_backend`; free with `backend_destroy`.
 Backend :: struct {
 	kind:                      Backend_Kind,
@@ -107,7 +111,67 @@ MAX_CREDENTIALS_BYTES :: 64 << 10
 @(private = "file")
 BACKEND_NAMES :: "none, public, premium, server"
 
+// has_http_scheme tells whether `url` starts with http:// or https://, in
+// any case, as libcurl reads the scheme.
+has_http_scheme :: proc(url: string) -> bool {
+	for scheme in ([?]string{"http://", "https://"}) {
+		if len(url) >= len(scheme) && strings.equal_fold(url[:len(scheme)], scheme) {
+			return true
+		}
+	}
+	return false
+}
+
+// settings_name is how a message names the settings file: the whole path
+// when the settings came from a file, else "config.json".
+@(private = "file")
+settings_name :: proc(s: Settings) -> string {
+	return s.path if s.path != "" else "config.json"
+}
+
+// register_secret_formatters makes `fmt` print a `Backend` and an `Env`
+// with `<redacted>` in place of the key, so that an accidental `%v` of them,
+// or of anything that holds one, cannot leak it. It runs at start, before
+// any thread does, and registers what no one has registered.
+@(init)
+register_secret_formatters :: proc "contextless" () {
+	context = runtime.default_context()
+	if fmt._user_formatters == nil {
+		fmt.set_user_formatters(new(map[typeid]fmt.User_Formatter))
+	}
+	_ = fmt.register_user_formatter(Backend, redact_backend)
+	_ = fmt.register_user_formatter(Env, redact_env)
+}
+
+@(private = "file")
+REDACTED :: "<redacted>"
+
+@(private = "file")
+redact_backend :: proc(fi: ^fmt.Info, arg: any, verb: rune) -> bool {
+	b := (^Backend)(arg.data)^
+	if b.key != "" {
+		b.key = REDACTED
+	}
+	// The copy is printed the usual way: the formatter for its type must not
+	// run again on it.
+	fi.ignore_user_formatters = true
+	fmt.fmt_value(fi, b, verb)
+	return true
+}
+
+@(private = "file")
+redact_env :: proc(fi: ^fmt.Info, arg: any, verb: rune) -> bool {
+	e := (^Env)(arg.data)^
+	if e.api_key != "" {
+		e.api_key = REDACTED
+	}
+	fi.ignore_user_formatters = true
+	fmt.fmt_value(fi, e, verb)
+	return true
+}
+
 settings_destroy :: proc(s: ^Settings, allocator := context.allocator) {
+	delete(s.path, allocator)
 	delete(s.language_rule, allocator)
 	for w in s.ignore_words {
 		delete(w, allocator)
@@ -209,8 +273,9 @@ fail :: proc(path: string, allocator: runtime.Allocator, format: string, args: .
 // but cannot be used is an error, and `Settings` is then empty: invalid
 // JSON, a top level that is not an object, a key of the wrong type, an
 // unknown `backend`, a `server` backend without a URL (or with one that does
-// not start with http:// or https://), a file bigger than a MiB, or
-// something that is not a regular file. Reading it as "no settings" would
+// not start with http:// or https://, in any case), a file bigger than a MiB,
+// or something that is not a regular file. A URL is checked only when the
+// file's backend is `server`; for any other backend it is not used. Reading it as "no settings" would
 // turn Premium off after one typo.
 //
 // A key the checker does not know is no error; it lands in `unknown_keys`.
@@ -228,6 +293,8 @@ load_settings :: proc(
 		// Not a deferred cleanup: Odin copies the named results before it
 		// runs a defer, so a defer cannot empty them.
 		settings_destroy(&s, allocator)
+	} else {
+		s.path = strings.clone(path, allocator)
 	}
 	return
 }
@@ -268,28 +335,41 @@ parse_settings :: proc(
 		return
 	}
 	defer delete(data, allocator)
-	text := string(data)
-	text = strings.trim_prefix(text, "\xEF\xBB\xBF")
-
-	// A parser of our own rather than `json.parse`, which stops after the
-	// first value and would let anything after it through.
-	parser := json.make_parser_from_string(text, .JSON, false, allocator)
-	root, jerr := json.parse_value(&parser)
-	if jerr != .None {
-		err = fail(path, allocator, "is not valid JSON (%v)", jerr)
-		return
-	}
+	root, kind, detail := parse_json_object(string(data), allocator)
 	defer json.destroy_value(root, allocator)
-	if parser.curr_token.kind != .EOF {
-		err = fail(path, allocator, "is not valid JSON (text after the closing brace)")
+	switch kind {
+	case .None:
+	case .Syntax:
+		err = fail(path, allocator, "is not valid JSON (%s)", detail)
 		return
-	}
-	obj, is_obj := root.(json.Object)
-	if !is_obj {
+	case .Not_Object:
 		err = fail(path, allocator, "must be a JSON object")
 		return
+	case .Unkeepable_Number:
+		// Only setup makes this one: the checker reads no number.
+		err = fail(path, allocator, "holds a number that cannot be kept")
+		return
 	}
+	obj := root.(json.Object)
+	return read_settings(obj, path, false, allocator)
+}
 
+// read_settings reads the settings from the parsed object `obj`. `path`
+// names where the object came from in a problem: the file's path, or for
+// `values_mode` (the values `--setup` is given) the words for their source.
+// In `values_mode` a `null` is a key to delete and is skipped, a `server` is
+// checked for its scheme whatever the backend, and a server backend without
+// a URL is not a problem yet, as the stored file may hold it.
+@(private)
+read_settings :: proc(
+	obj: json.Object,
+	path: string,
+	values_mode: bool,
+	allocator: runtime.Allocator,
+) -> (
+	s: Settings,
+	err: Settings_Error,
+) {
 	unknown: [dynamic]string
 	unknown.allocator = allocator
 	defer if err.problem != "" {
@@ -302,6 +382,9 @@ parse_settings :: proc(
 	// the map's order.
 	for key in sorted_keys(obj) {
 		value := obj[key]
+		if _, is_null := value.(json.Null); is_null && values_mode {
+			continue
+		}
 		switch key {
 		case "languageRule":
 			str, ok := value.(json.String)
@@ -323,7 +406,7 @@ parse_settings :: proc(
 				err = fail(path, allocator, `"languagetool" must be an object`)
 				return
 			}
-			if !read_languagetool(&s, lt, &unknown, path, &err, allocator) {
+			if !read_languagetool(&s, lt, &unknown, path, values_mode, &err, allocator) {
 				return
 			}
 		case:
@@ -331,15 +414,101 @@ parse_settings :: proc(
 		}
 	}
 
-	if kind, ok := s.backend.?; ok && kind == .Server {
+	if kind, ok := s.backend.?; ok && kind == .Server && !values_mode {
 		if s.server == "" {
 			err = fail(path, allocator, `"languagetool.server" is needed when "languagetool.backend" is "server"`)
+			return
+		}
+		if !has_http_scheme(s.server) {
+			err = fail(path, allocator, `"languagetool.server" must start with http:// or https://`)
 			return
 		}
 	}
 	slice.sort(unknown[:])
 	s.unknown_keys = unknown[:]
 	return
+}
+
+// What is wrong with a text that should be one JSON object.
+@(private)
+Json_Problem :: enum {
+	None,
+	Syntax, // not valid JSON; `detail` says what and where
+	Not_Object, // valid JSON, but not an object
+	Unkeepable_Number, // a number that setup cannot write back as it is (setup.odin)
+}
+
+// parse_json_object parses `text` as one JSON object and nothing after it.
+// A byte order mark is skipped. The text is strict JSON: core:encoding/json
+// takes a trailing comma in an object or a list, and this refuses it, as
+// Python's json does. A key given twice is refused by the parser.
+//
+// On a problem `root` is nil (everything is freed) and `detail` says what
+// and where, with the line and the column; it is allocated with
+// `context.temp_allocator`. Otherwise `root` is an object, to be freed with
+// `json.destroy_value`.
+//
+// Numbers are parsed as integers where they are integers, as the parser
+// reads them.
+@(private)
+parse_json_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
+	body := strings.trim_prefix(text, "\xEF\xBB\xBF")
+	// A parser of our own rather than `json.parse`, which stops after the
+	// first value and would let anything after it through.
+	parser := json.make_parser_from_string(body, .JSON, true, allocator)
+	value, jerr := json.parse_value(&parser)
+	if jerr != .None {
+		// The offending token is the one the parser has just stepped over.
+		where_ := position_text(body, parser.prev_token.offset)
+		if jerr == .Duplicate_Object_Key {
+			return nil, .Syntax, fmt.tprintf("duplicate key, near %s", where_)
+		}
+		return nil, .Syntax, fmt.tprintf("%v at %s", jerr, where_)
+	}
+	if parser.curr_token.kind != .EOF {
+		json.destroy_value(value, allocator)
+		return nil, .Syntax, fmt.tprintf("text after the end of the value, at %s", position_text(body, parser.curr_token.offset))
+	}
+	if offset, found := find_trailing_comma(body); found {
+		json.destroy_value(value, allocator)
+		return nil, .Syntax, fmt.tprintf("trailing comma at %s, which JSON does not allow", position_text(body, offset))
+	}
+	if _, is_obj := value.(json.Object); !is_obj {
+		json.destroy_value(value, allocator)
+		return nil, .Not_Object, ""
+	}
+	return value, .None, ""
+}
+
+// position_text is "line L, column C" for the byte `offset` of `text`,
+// counting from 1; the column counts bytes. It is worked out here because
+// the tokenizer's own columns count from 0 on the first line and from 1 on
+// the others.
+@(private)
+position_text :: proc(text: string, offset: int) -> string {
+	before := text[:clamp(offset, 0, len(text))]
+	line := 1 + strings.count(before, "\n")
+	column := len(before) - (strings.last_index_byte(before, '\n') + 1) + 1
+	return fmt.tprintf("line %d, column %d", line, column)
+}
+
+// find_trailing_comma looks for a comma right before a closing brace or
+// bracket. It reads the tokens, so a comma inside a string does not count.
+// The text has parsed already.
+@(private = "file")
+find_trailing_comma :: proc(text: string) -> (offset: int, found: bool) {
+	t := json.make_tokenizer(text, .JSON, true)
+	prev: json.Token
+	for {
+		tok, err := json.get_token(&t)
+		if err != .None || tok.kind == .EOF {
+			return 0, false
+		}
+		if (tok.kind == .Close_Brace || tok.kind == .Close_Bracket) && prev.kind == .Comma {
+			return prev.offset, true
+		}
+		prev = tok
+	}
 }
 
 @(private = "file")
@@ -389,11 +558,15 @@ read_languagetool :: proc(
 	lt: json.Object,
 	unknown: ^[dynamic]string,
 	path: string,
+	values_mode: bool,
 	err: ^Settings_Error,
 	allocator: runtime.Allocator,
 ) -> bool {
 	for key in sorted_keys(lt) {
 		value := lt[key]
+		if _, is_null := value.(json.Null); is_null && values_mode {
+			continue
+		}
 		switch key {
 		case "backend":
 			str, ok := value.(json.String)
@@ -418,7 +591,7 @@ read_languagetool :: proc(
 				err^ = fail(path, allocator, `"languagetool.server" must be a string`)
 				return false
 			}
-			if str != "" && !(strings.has_prefix(string(str), "http://") || strings.has_prefix(string(str), "https://")) {
+			if values_mode && str != "" && !has_http_scheme(string(str)) {
 				err^ = fail(path, allocator, `"languagetool.server" must start with http:// or https://`)
 				return false
 			}
@@ -487,10 +660,21 @@ choose_backend :: proc(
 	case .Server:
 		url := env.server if env.server != "" else s.server
 		if url == "" {
-			problem = strings.clone(
-				"the server backend needs a URL: set " + ENV_SERVER + " or \"languagetool.server\" in config.json",
-				allocator,
+			problem = fmt.aprintf(
+				"the server backend needs a URL: set " + ENV_SERVER + " or \"languagetool.server\" in %s",
+				settings_name(s),
+				allocator = allocator,
 			)
+			return
+		}
+		if !has_http_scheme(url) {
+			// Say where the bad value is, so that it is not looked for in the
+			// wrong place. The value itself stays out: a URL may hold a login.
+			source := ENV_SERVER + " (environment variable)"
+			if env.server == "" {
+				source = fmt.tprintf("\"languagetool.server\" in %s", settings_name(s))
+			}
+			problem = fmt.aprintf("%s must start with http:// or https://", source, allocator = allocator)
 			return
 		}
 		b = Backend {
@@ -503,7 +687,7 @@ choose_backend :: proc(
 		key, key_from, key_problem := find_key(s, env, key_lookup, allocator)
 		defer delete(key_problem, allocator)
 		if username == "" || key_problem != "" {
-			problem = premium_problem(username == "", key_problem, allocator)
+			problem = premium_problem(s, username == "", key_problem, allocator)
 			delete(key, allocator)
 			return
 		}
@@ -535,11 +719,14 @@ backend_kind :: proc(s: Settings, env: Env) -> (kind: Backend_Kind, from: string
 
 // premium_problem words what keeps Premium from running.
 @(private = "file")
-premium_problem :: proc(no_username: bool, key_problem: string, allocator: runtime.Allocator) -> string {
+premium_problem :: proc(s: Settings, no_username: bool, key_problem: string, allocator: runtime.Allocator) -> string {
 	parts: [2]string
 	n := 0
 	if no_username {
-		parts[n] = "LanguageTool Premium needs the account: set " + ENV_USERNAME + " or \"languagetool.username\" in config.json"
+		parts[n] = fmt.tprintf(
+			"LanguageTool Premium needs the account: set " + ENV_USERNAME + " or \"languagetool.username\" in %s",
+			settings_name(s),
+		)
 		n += 1
 	}
 	if key_problem != "" {
@@ -581,7 +768,7 @@ find_key :: proc(
 		}
 	}
 
-	item := "an rbw item named in \"languagetool.keyItem\""
+	item := fmt.tprintf("an rbw item named in \"languagetool.keyItem\" in %s", settings_name(s))
 	if s.key_item != "" {
 		item = fmt.tprintf("the rbw item \"%s\" (rbw installed and unlocked)", s.key_item)
 	}
@@ -604,7 +791,20 @@ find_key :: proc(
 // not read at all.
 @(private = "file")
 read_credentials :: proc(path: string, allocator: runtime.Allocator) -> (key: string, problem: string) {
-	info, serr := os.stat(path, allocator)
+	// One open file for the mode, the size and the contents: a file swapped
+	// between a stat and a read would be checked as one and read as another.
+	// Not blocking, so that a FIFO in its place is seen as no regular file
+	// instead of waiting for a writer.
+	flags := os.File_Flags{.Read}
+	when ODIN_OS != .Windows {
+		flags += {.Non_Blocking}
+	}
+	f, oerr := os.open(path, flags)
+	if oerr != nil {
+		return
+	}
+	defer os.close(f)
+	info, serr := os.fstat(f, allocator)
 	if serr != nil {
 		return
 	}
@@ -629,7 +829,7 @@ read_credentials :: proc(path: string, allocator: runtime.Allocator) -> (key: st
 		// variable.
 		_ = mode
 	}
-	data, rerr := os.read_entire_file(path, allocator)
+	data, rerr := os.read_entire_file(f, allocator)
 	if rerr != nil {
 		return
 	}
@@ -689,244 +889,4 @@ rbw_lookup :: proc(item: string) -> (string, bool) {
 		return "", false
 	}
 	return strings.clone(key, context.temp_allocator), true
-}
-
-// The most `command_output` keeps of what a command printed.
-@(private = "file")
-MAX_COMMAND_OUTPUT :: 64 << 10
-
-// command_output runs `command` and reports whether it exited 0 within
-// `timeout`. A command that is missing, fails to start, exits non-zero, or is
-// still running when the time is up (it is then killed) gives `ok == false`.
-// stdin is empty and stderr is dropped, as it may name the item. With
-// `capture`, `out` is what the command printed to stdout, up to 64 KiB, read
-// without waiting for a grandchild that still holds the pipe; the caller
-// deletes it. Without, `out` is nil.
-command_output :: proc(
-	command: []string,
-	timeout: time.Duration,
-	capture: bool,
-) -> (
-	out: []byte,
-	ok: bool,
-) {
-	desc := os.Process_Desc {
-		command = command,
-	}
-	r, w: ^os.File
-	if capture {
-		perr: os.Error
-		r, w, perr = os.pipe()
-		if perr != nil {
-			return nil, false
-		}
-		desc.stdout = w
-	}
-	defer if capture {
-		_ = os.close(r)
-	}
-	proc_, serr := os.process_start(desc)
-	if capture {
-		// The parent's copy of the write end; with it open the pipe never ends.
-		_ = os.close(w)
-	}
-	if serr != nil {
-		return nil, false
-	}
-	state, werr := os.process_wait(proc_, timeout)
-	if werr != nil {
-		if werr == .Timeout {
-			_ = os.process_kill(proc_)
-			_, _ = os.process_wait(proc_, time.Second)
-		}
-		return nil, false
-	}
-	if !state.exited || state.exit_code != 0 {
-		return nil, false
-	}
-	if !capture {
-		return nil, true
-	}
-
-	buf: [dynamic]byte
-	chunk: [4096]byte
-	for len(buf) < MAX_COMMAND_OUTPUT {
-		has, perr := os.pipe_has_data(r)
-		if !has || perr != nil {
-			break
-		}
-		n, rerr := os.read(r, chunk[:])
-		append(&buf, ..chunk[:n])
-		if n == 0 || rerr != nil {
-			break
-		}
-	}
-	return buf[:], true
-}
-
-// Who feeds a child's stdin, and what: the writer thread's work order.
-// `stop` is set by the reader, with `sync.atomic_store`, when the writer must
-// give up.
-@(private = "file")
-Stdin_Feed :: struct {
-	w:    ^os.File,
-	data: []byte,
-	stop: bool,
-}
-
-// feed_stdin writes all of the order's data into the pipe and closes it, so
-// the child sees the end of its input. It stops at the first write error
-// (the child has gone away) and when `stop` is set. On POSIX the pipe is
-// non-blocking and a full pipe is retried every millisecond, so the writer
-// never sits in a write that nothing will end. On Windows a write waits for
-// room, and a writer stuck in it never looks at `stop` (see
-// pipe_windows.odin). It owns `w` and closes it.
-@(private = "file")
-feed_stdin :: proc(t: ^thread.Thread) {
-	feed := (^Stdin_Feed)(t.data)
-	data := feed.data
-	for len(data) > 0 && !sync.atomic_load(&feed.stop) {
-		n, res := write_some(feed.w, data)
-		if res == .Gone {
-			break
-		}
-		if res == .Full {
-			time.sleep(time.Millisecond)
-		}
-		data = data[n:]
-	}
-	_ = os.close(feed.w)
-}
-
-// command_with_input runs `command`, writes `input` into its stdin and
-// returns what it printed to stdout, up to `max_output` bytes. It reports
-// false when the command is missing or fails to start, when it is still
-// running after `timeout` (it is then killed and reaped), or when it prints
-// more than `max_output`. It does not look at the exit code: what a command
-// printed before it failed counts, as the reference's `hunspell` run counts
-// it. stderr is dropped. The result is allocated with `allocator`; the caller
-// deletes it.
-//
-// The input goes in from a thread of its own while this one reads the
-// output with a deadline, because a command that answers as it reads, as
-// hunspell does, blocks on a full output pipe while we block on a full input
-// pipe if one thread does both. The writer ends when the command ends early
-// (its write fails with a broken pipe), when it has written everything, and
-// otherwise when this procedure tells it to stop, which it does before it
-// returns. That last is what bounds the run when the command is a wrapper
-// whose own child holds the pipes: killing the wrapper breaks nothing.
-//
-// On POSIX only. On Windows the writer blocks in its write and never sees
-// the order to stop, so for such a wrapper this procedure waits in the
-// join for as long as the wrapper's child lives, whatever `timeout` says.
-// The timeout bounds the run there only for a command that holds its pipes
-// itself. That is why the hunspell pass does not run on Windows.
-command_with_input :: proc(
-	command: []string,
-	input: []byte,
-	timeout: time.Duration,
-	max_output: int,
-	allocator := context.allocator,
-) -> (
-	out: []byte,
-	ok: bool,
-) {
-	in_r, in_w, e1 := os.pipe()
-	if e1 != nil {
-		return nil, false
-	}
-	out_r, out_w, e2 := os.pipe()
-	if e2 != nil {
-		_ = os.close(in_r)
-		_ = os.close(in_w)
-		return nil, false
-	}
-	ignore_sigpipe()
-	proc_, serr := os.process_start(os.Process_Desc{command = command, stdin = in_r, stdout = out_w})
-	// The parent's copies of the child's ends; with them open neither pipe
-	// ever ends.
-	_ = os.close(in_r)
-	_ = os.close(out_w)
-	if serr != nil {
-		_ = os.close(in_w)
-		_ = os.close(out_r)
-		return nil, false
-	}
-
-	set_nonblocking(in_w)
-	feed := Stdin_Feed {
-		w    = in_w,
-		data = input,
-	}
-	writer := thread.create(feed_stdin)
-	writer.data = &feed
-	writer.init_context = context
-	thread.start(writer)
-	done := false
-	defer {
-		// Whatever happened, end the writer before the join. Killing the child
-		// does not do it: a wrapper script's own child may hold the read end
-		// of the pipe, so the pipe never breaks, and the writer is told to stop
-		// instead (which a writer blocked on Windows does not see). The output
-		// pipe closes first so a child blocked on it can go.
-		if !done {
-			_ = os.process_kill(proc_)
-			_, _ = os.process_wait(proc_, time.Second)
-		}
-		sync.atomic_store(&feed.stop, true)
-		_ = os.close(out_r)
-		thread.join(writer)
-		thread.destroy(writer)
-	}
-
-	buf := make([dynamic]byte, allocator)
-	chunk: [4096]byte
-	deadline := time.time_add(time.now(), timeout)
-	exited := false
-	for {
-		if time.diff(time.now(), deadline) <= 0 {
-			delete(buf)
-			return nil, false
-		}
-		// Look at the process before the pipe: data written before it exited
-		// is in the pipe when it is seen to have exited.
-		if !exited {
-			st, werr := os.process_wait(proc_, 0)
-			exited = werr == nil && st.exited
-			done = exited
-		}
-		has, perr := os.pipe_has_data(out_r)
-		if perr != nil {
-			break // the write end is closed: the end of the output
-		}
-		if !has {
-			if exited {
-				break // nothing more is coming, a grandchild may hold the pipe
-			}
-			time.sleep(time.Millisecond)
-			continue
-		}
-		n, rerr := os.read(out_r, chunk[:])
-		if n > 0 {
-			if len(buf) + n > max_output {
-				delete(buf)
-				return nil, false
-			}
-			append(&buf, ..chunk[:n])
-		}
-		if n <= 0 || rerr != nil {
-			break
-		}
-	}
-
-	if !exited {
-		// The output ended; the exit follows at once, or it is killed.
-		_, werr := os.process_wait(proc_, max(time.diff(time.now(), deadline), 0))
-		if werr != nil {
-			delete(buf)
-			return nil, false
-		}
-		done = true
-	}
-	return buf[:], true
 }

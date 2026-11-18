@@ -5,9 +5,12 @@ import "core:bufio"
 import "core:encoding/json"
 import "core:fmt"
 import "core:io"
+import "core:math"
 import "core:os"
 import "core:slice"
+import "core:strconv"
 import "core:strings"
+import "core:unicode"
 
 // `prose-check --setup`: writes the settings file, from the questions on a
 // terminal or from a JSON object on standard input (`--values-stdin`, which
@@ -41,9 +44,11 @@ setup_fail :: proc(path: string, allocator: runtime.Allocator, format: string, a
 // The keys given replace the stored ones; all others are kept, unknown ones
 // with their JSON values. `languagetool` is merged key by key. A key set to
 // `null` is deleted, which is how a backend switch drops `server`; a
-// `languagetool` left empty goes too. A key named `apiKey`, `api_key`,
-// `key`, `password` or `token` (any case), at the top or inside
-// `languagetool`, is refused: the key never goes in the settings file.
+// `languagetool` left empty goes too. A key that is named like a credential
+// (`apiKey`, `api-key`, `key`, `password`, `token`, `secret`, anything that
+// ends in token, secret or password; see `is_key_name`), at the top or
+// inside `languagetool`, is refused: the key never goes in the settings
+// file.
 //
 // The result is stable, pretty JSON: two-space indent, `languageRule`,
 // `ignoreWords`, `languagetool` (`backend`, `server`, `username`,
@@ -60,52 +65,133 @@ apply_values :: proc(path, values_json: string, allocator := context.allocator) 
 	if len(values_json) > MAX_SETTINGS_BYTES {
 		return setup_fail(path, allocator, "the values are too big (%d bytes)", len(values_json))
 	}
-	root, problem := parse_object(values_json, allocator)
-	if problem != "" {
-		defer json.destroy_value(root, allocator)
-		return setup_fail(path, allocator, "the values on standard input are %s", problem)
-	}
+	root, kind, detail := parse_object(values_json, allocator)
 	defer json.destroy_value(root, allocator)
+	switch kind {
+	case .None:
+	case .Syntax:
+		return setup_fail(path, allocator, "the values on standard input are not valid JSON (%s)", detail)
+	case .Not_Object:
+		return setup_fail(path, allocator, "the values on standard input must be a JSON object")
+	case .Unkeepable_Number:
+		return setup_fail(path, allocator, "the values on standard input hold a number %s", detail)
+	}
 	values := &root.(json.Object)
-	return apply_object(path, values, allocator)
+	return apply_object(path, values, "the values on standard input", allocator)
 }
 
-// parse_object parses `text` as one JSON object, and nothing after it. The
-// problem is "" or a short phrase; on a problem the value is to be freed
-// all the same. A byte order mark is skipped.
+// parse_object is `parse_json_object` for setup, which writes what it read
+// back, so it also refuses a number it could not write as it is. See
+// `find_unkeepable_number`. `detail` of that problem finishes the sentence
+// "... a number ...".
 @(private = "file")
-parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, problem: string) {
+parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
+	root, kind, detail = parse_json_object(text, allocator)
+	if kind != .None {
+		return
+	}
 	body := strings.trim_prefix(text, "\xEF\xBB\xBF")
-	parser := json.make_parser_from_string(body, .JSON, false, allocator)
-	value, jerr := json.parse_value(&parser)
-	if jerr != .None {
-		return value, fmt.tprintf("not valid JSON (%v)", jerr)
+	if tok, offset, found := find_unkeepable_number(body); found {
+		json.destroy_value(root, allocator)
+		return nil, .Unkeepable_Number, fmt.tprintf("prose-check cannot keep exactly: %s at %s", tok, position_text(body, offset))
 	}
-	if parser.curr_token.kind != .EOF {
-		return value, "not valid JSON (text after the closing brace)"
-	}
-	if _, is_obj := value.(json.Object); !is_obj {
-		return value, "not a JSON object"
-	}
-	return value, ""
+	return
 }
 
-// is_key_name tells whether `name` is a spelling of the API key's name.
+// find_unkeepable_number looks for a number that does not survive being
+// read and written again: an integer outside 64 bits, which the parser turns
+// into some other number without a word; a float that is out of range
+// (1e999 is +Inf, and 1e-999 is 0); everything else is written back with the
+// same value. The text has parsed already.
 @(private = "file")
-is_key_name :: proc(name: string) -> bool {
-	for secret in ([?]string{"apiKey", "api_key", "key", "password", "token"}) {
-		if strings.equal_fold(name, secret) {
+find_unkeepable_number :: proc(text: string) -> (number: string, offset: int, found: bool) {
+	t := json.make_tokenizer(text, .JSON, true)
+	for {
+		tok, err := json.get_token(&t)
+		if err != .None || tok.kind == .EOF {
+			return
+		}
+		bad := false
+		#partial switch tok.kind {
+		case .Integer:
+			bad = !fits_i64(tok.text)
+		case .Float:
+			f, ok := strconv.parse_f64(tok.text)
+			bad = !ok || math.is_inf(f) || math.is_nan(f) || (f == 0 && has_nonzero_mantissa(tok.text))
+		}
+		if bad {
+			return tok.text, tok.offset, true
+		}
+	}
+}
+
+// fits_i64 tells whether the integer literal `digits` (an optional minus,
+// then digits) is within 64 bits. strconv.parse_i64 does not say: it
+// returns some number for 123456789012345678901234567890.
+@(private = "file")
+fits_i64 :: proc(digits: string) -> bool {
+	rest := digits
+	limit: u64 = 1 << 63 - 1
+	if strings.has_prefix(rest, "-") {
+		rest = rest[1:]
+		limit = 1 << 63
+	}
+	v: u64
+	for c in transmute([]u8)rest {
+		d := u64(c - '0')
+		if v > (limit - d) / 10 {
+			return false
+		}
+		v = v * 10 + d
+	}
+	return true
+}
+
+// has_nonzero_mantissa tells whether a float literal has a digit but 0 before
+// its exponent, so that a value of 0 means it underflowed.
+@(private = "file")
+has_nonzero_mantissa :: proc(literal: string) -> bool {
+	for c in transmute([]u8)literal {
+		if c == 'e' || c == 'E' {
+			break
+		}
+		if c >= '1' && c <= '9' {
 			return true
 		}
 	}
 	return false
 }
 
+// is_key_name tells whether `name` is a spelling of a credential's name. The
+// name is read without case, dashes, underscores and dots, so `api-key`,
+// `API.KEY` and `apiKey` are one. It is a credential when that is `apikey`,
+// `key`, `password`, `token`, `secret`, `apitoken` or `accesstoken`, or ends
+// in `token`, `secret` or `password` (`csrf_token`, `clientSecret`). `keyItem`
+// (the name of an rbw item, not a key), `keyboard` and `keys` are not.
+@(private = "file")
+is_key_name :: proc(name: string) -> bool {
+	b := strings.builder_make(context.temp_allocator)
+	for r in name {
+		switch r {
+		case '-', '_', '.':
+		case:
+			strings.write_rune(&b, unicode.to_lower(r))
+		}
+	}
+	normal := strings.to_string(b)
+	switch normal {
+	case "apikey", "key", "password", "token", "secret", "apitoken", "accesstoken":
+		return true
+	}
+	return strings.has_suffix(normal, "token") || strings.has_suffix(normal, "secret") || strings.has_suffix(normal, "password")
+}
+
 // apply_object is `apply_values` for values already parsed. It takes the
 // entries out of `values` and frees what it does not keep; the map itself
-// stays the caller's, empty.
+// stays the caller's, empty. `from` names where the values came from in a
+// problem with one of them ("the values on standard input").
 @(private = "file")
-apply_object :: proc(path: string, values: ^json.Object, allocator: runtime.Allocator) -> Settings_Error {
+apply_object :: proc(path: string, values: ^json.Object, from: string, allocator: runtime.Allocator) -> Settings_Error {
 	for key, value in values {
 		if is_key_name(key) {
 			return setup_fail(path, allocator, SETUP_NO_KEY_IN_FILE + " (refused %q)", key)
@@ -117,10 +203,18 @@ apply_object :: proc(path: string, values: ^json.Object, allocator: runtime.Allo
 						return setup_fail(path, allocator, SETUP_NO_KEY_IN_FILE + " (refused %q in \"languagetool\")", k)
 					}
 				}
-			} else if _, is_null := value.(json.Null); !is_null {
-				return setup_fail(path, allocator, "%s: \"languagetool\" must be an object", path)
 			}
 		}
+	}
+
+	// The values alone must be usable, whatever the stored file holds. A
+	// fault found here is in the values, so it names where they came from and
+	// not the settings file, which has done nothing wrong.
+	checked, verr := read_settings(values^, from, true, allocator)
+	settings_destroy(&checked, allocator)
+	if verr.problem != "" {
+		defer settings_error_destroy(&verr, allocator)
+		return setup_fail(path, allocator, "%s", verr.problem)
 	}
 
 	if path == "" {
@@ -190,8 +284,18 @@ resolve_link :: proc(path: string, allocator: runtime.Allocator) -> (target: str
 			delete(cur, allocator)
 			cur = dest
 		} else {
+			// The kernel reads a relative link from the directory the link is
+			// really in. Cleaning `..` out of the path as written gives
+			// another file when a directory on the way is a link itself, so
+			// the directory is resolved first (on Windows the OS call only
+			// makes it absolute).
 			dir, _ := os.split_path(cur)
-			joined, _ := os.join_path({dir, dest}, allocator)
+			base, aerr := os.get_absolute_path(dir if dir != "" else ".", allocator)
+			if aerr != nil {
+				base = strings.clone(dir, allocator)
+			}
+			joined, _ := os.join_path({base, dest}, allocator)
+			delete(base, allocator)
 			delete(dest, allocator)
 			delete(cur, allocator)
 			cur = joined
@@ -216,6 +320,9 @@ read_stored :: proc(target, path: string, allocator: runtime.Allocator) -> (valu
 	size, regular := info.size, info.type == .Regular
 	os.file_info_delete(info, allocator)
 	if !regular {
+		if target != path {
+			return nil, setup_fail(path, allocator, "%s: is not a regular file (it is a link to %s)", path, target)
+		}
 		return nil, setup_fail(path, allocator, "%s: is not a regular file", path)
 	}
 	if size > MAX_SETTINGS_BYTES {
@@ -226,9 +333,15 @@ read_stored :: proc(target, path: string, allocator: runtime.Allocator) -> (valu
 	if rerr != nil {
 		return nil, setup_fail(path, allocator, "%s: cannot be read (%s)", path, os.error_string(rerr))
 	}
-	parsed, problem := parse_object(string(data), allocator)
-	if problem != "" {
-		return parsed, setup_fail(path, allocator, "%s: is %s", path, problem)
+	parsed, kind, detail := parse_object(string(data), allocator)
+	switch kind {
+	case .None:
+	case .Syntax:
+		return parsed, setup_fail(path, allocator, "%s: is not valid JSON (%s)", path, detail)
+	case .Not_Object:
+		return parsed, setup_fail(path, allocator, "%s: must be a JSON object", path)
+	case .Unkeepable_Number:
+		return parsed, setup_fail(path, allocator, "%s: holds a number %s", path, detail)
 	}
 	return parsed, {}
 }
@@ -339,7 +452,15 @@ emit_value :: proc(b: ^strings.Builder, value: json.Value, depth: int) {
 	case json.Integer:
 		strings.write_i64(b, v)
 	case json.Float:
-		strings.write_float(b, v, 'g', -1, 64)
+		// The shortest text that reads back as the same number, and still a
+		// float: 1.0 stays 1.0 and does not become the integer 1.
+		buf: [32]byte
+		text := strconv.write_float(buf[:], v, 'g', -1, 64)
+		text = strings.trim_prefix(text, "+") // JSON has no plus sign
+		strings.write_string(b, text)
+		if !strings.contains_any(text, ".eE") {
+			strings.write_string(b, ".0")
+		}
 	case json.String:
 		write_json_string(b, string(v))
 	case json.Array:
@@ -405,8 +526,17 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 	created := false
 	if dir != "" && !os.exists(dir) {
 		parent, _ := os.split_path(dir)
-		if parent != "" {
-			_ = os.make_directory_all(parent)
+		if parent != "" && !os.exists(parent) {
+			if merr := os.make_directory_all(parent); merr != nil && merr != .Exist {
+				return setup_fail(
+					path,
+					allocator,
+					"cannot write %s: the directory %s cannot be made (%s)",
+					target,
+					parent,
+					os.error_string(merr),
+				)
+			}
 		}
 		if merr := os.make_directory(dir, os.perm_number(0o700)); merr != nil && merr != .Exist {
 			return setup_fail(path, allocator, "cannot write %s: the directory cannot be made (%s)", target, os.error_string(merr))
@@ -420,6 +550,7 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 		_ = os.remove(dir)
 	}
 
+	sweep_stale_temps(dir, allocator)
 	file, tmp, cerr := create_temp(dir, allocator)
 	if cerr != nil {
 		return setup_fail(path, allocator, "cannot write %s (%s)", target, os.error_string(cerr))
@@ -453,8 +584,82 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 		_ = os.remove(tmp)
 		return setup_fail(path, allocator, "cannot write %s: cannot replace it (%s)", target, os.error_string(rerr))
 	}
+	// The rename is in the directory's entries; without this sync a crash
+	// right after could bring the old file back. Best effort: a file system
+	// that cannot sync a directory has nothing more to give.
+	_ = sync_directory(dir)
 	failed = false
 	return {}
+}
+
+@(private = "file")
+TEMP_PREFIX :: ".config.json."
+@(private = "file")
+TEMP_SUFFIX :: ".tmp"
+
+// sweep_stale_temps removes the temporary files that a crashed write left in
+// `dir`: `.config.json.<pid>.<n>.tmp` (see `create_temp`), regular files
+// whose process is gone. Not those of this process, which may be writing in
+// another thread, and nothing on Windows, which cannot tell a live process
+// from a dead one (`process_may_be_alive`). Problems are ignored: a leftover
+// is clutter, not a fault of this write.
+@(private = "file")
+sweep_stale_temps :: proc(dir: string, allocator: runtime.Allocator) {
+	entries, err := os.read_all_directory_by_path(dir if dir != "" else ".", allocator)
+	if err != nil {
+		return
+	}
+	defer os.file_info_slice_delete(entries, allocator)
+	for entry in entries {
+		if entry.type != .Regular {
+			continue
+		}
+		pid, ours := temp_file_pid(entry.name)
+		if !ours || pid == os.get_pid() || process_may_be_alive(pid) {
+			continue
+		}
+		path: string
+		if dir != "" {
+			path, _ = os.join_path({dir, entry.name}, allocator)
+		} else {
+			path = strings.clone(entry.name, allocator)
+		}
+		_ = os.remove(path)
+		delete(path, allocator)
+	}
+}
+
+// temp_file_pid reads the process id out of the name of a temporary file,
+// `.config.json.<pid>.<n>.tmp` with two numbers. It is false for any other
+// name.
+@(private = "file")
+temp_file_pid :: proc(name: string) -> (pid: int, ok: bool) {
+	if !strings.has_prefix(name, TEMP_PREFIX) || !strings.has_suffix(name, TEMP_SUFFIX) {
+		return 0, false
+	}
+	middle := name[len(TEMP_PREFIX):len(name) - len(TEMP_SUFFIX)]
+	dot := strings.index_byte(middle, '.')
+	if dot <= 0 {
+		return 0, false
+	}
+	pid_text, count_text := middle[:dot], middle[dot + 1:]
+	if !all_digits(pid_text) || !all_digits(count_text) {
+		return 0, false
+	}
+	return strconv.parse_int(pid_text, 10)
+}
+
+@(private = "file")
+all_digits :: proc(s: string) -> bool {
+	if s == "" {
+		return false
+	}
+	for c in transmute([]u8)s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // create_temp creates a new file in `dir` with mode 0600, under a name no
@@ -463,7 +668,7 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 create_temp :: proc(dir: string, allocator: runtime.Allocator) -> (file: ^os.File, name: string, err: os.Error) {
 	pid := os.get_pid()
 	for i in 0 ..< 1000 {
-		leaf := fmt.tprintf(".config.json.%d.%d.tmp", pid, i)
+		leaf := fmt.tprintf(TEMP_PREFIX + "%d.%d" + TEMP_SUFFIX, pid, i)
 		full := leaf
 		if dir != "" {
 			full, _ = os.join_path({dir, leaf}, allocator)
@@ -634,7 +839,7 @@ run_setup_tty :: proc(stdin: io.Reader, stdout, stderr: io.Writer, path: string,
 				delete(answer, allocator)
 				answer = strings.clone(now, allocator)
 			}
-			if strings.has_prefix(answer, "http://") || strings.has_prefix(answer, "https://") {
+			if has_http_scheme(answer) {
 				set(&lt, "server", json.String(answer), allocator)
 				break
 			}
@@ -707,7 +912,7 @@ run_setup_tty :: proc(stdin: io.Reader, stdout, stderr: io.Writer, path: string,
 	}
 	set(&values, "languagetool", lt, allocator)
 
-	err := apply_object(path, &values, allocator)
+	err := apply_object(path, &values, "the answers", allocator)
 	defer settings_error_destroy(&err, allocator)
 	if err.problem != "" {
 		fmt.wprintf(stderr, "prose: %s\nprose: the settings file is unchanged\n", err.problem)

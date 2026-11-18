@@ -148,8 +148,9 @@ a_byte_order_mark_and_a_huge_line_do_no_harm :: proc(t: ^testing.T) {
 the_shipped_dictionary_file_adds_no_word :: proc(t: ^testing.T) {
 	cfg, unused := dirs(t)
 	defer dirs_done(cfg, unused)
-	skill := "skills/prose"
-	testing.expect(t, os.is_file("skills/prose/dictionary.txt"))
+	// Found from this file, not from the working directory the tests run in.
+	skill := #directory + "../skills/prose"
+	testing.expect(t, os.is_file(#directory + "../skills/prose/dictionary.txt"))
 	ws := prose.load_words_in({}, cfg, skill)
 	defer prose.word_set_destroy(&ws)
 	testing.expect_value(t, len(ws), 19)
@@ -178,4 +179,72 @@ the_skill_directory_is_the_parent_of_the_executables_directory :: proc(t: ^testi
 	p := prose.shipped_dictionary_path(SKILL)
 	defer delete(p)
 	testing.expect_value(t, p, WANT)
+}
+
+// A line ends at \n, at \r\n and at a lone \r (the old Mac), as a text
+// editor on any system understands it.
+@(test)
+a_lone_carriage_return_ends_a_line :: proc(t: ^testing.T) {
+	cfg, skill := dirs(t)
+	defer dirs_done(cfg, skill)
+	write(t, cfg, "Alpha\rBeta\r\nGamma\n# a comment\rDelta\r\r  Epsilon  \r")
+	ws := prose.load_words_in({}, cfg, skill)
+	defer prose.word_set_destroy(&ws)
+	for w in ([]string{"alpha", "beta", "gamma", "delta", "epsilon"}) {
+		testing.expectf(t, has(ws, w), "%s missing", w)
+	}
+	// The comment ended at the \r: only what follows on its own line counts.
+	testing.expect(t, !has(ws, "# a comment") && !has(ws, "a comment"))
+	testing.expect(t, !has(ws, "alpha\rbeta") && !has(ws, "delta\r"))
+	testing.expect_value(t, len(ws), 19 + 5)
+	// Only carriage returns, one word per line.
+	write(t, cfg, "One\rTwo\rThree")
+	ws2 := prose.load_words_in({}, cfg, skill)
+	defer prose.word_set_destroy(&ws2)
+	testing.expect(t, has(ws2, "one") && has(ws2, "two") && has(ws2, "three"))
+	testing.expect_value(t, len(ws2), 19 + 3)
+}
+
+// Trailing separators go, but a root stays a root: `C:\` is not `C:`.
+@(test)
+trailing_separators_are_trimmed_but_a_root_is_kept :: proc(t: ^testing.T) {
+	Case :: struct {
+		in_, want: string,
+	}
+	for c in ([]Case {
+			{`C:\`, `C:\`},
+			{`C:\\`, `C:\`},
+			{`C:/`, `C:/`},
+			{`c:\`, `c:\`},
+			{`C:`, `C:`},
+			{`C:\bin\`, `C:\bin`},
+			{`C:\bin`, `C:\bin`},
+			{`/`, `/`},
+			{`//`, `/`},
+			{`\`, `\`},
+			{`/opt/skills/`, `/opt/skills`},
+			{`/opt/skills`, `/opt/skills`},
+			{`\\server\share\`, `\\server\share`},
+			{``, ``},
+		}) {
+		testing.expectf(t, prose.trim_trailing_separators(c.in_) == c.want, "%q: got %q, want %q", c.in_, prose.trim_trailing_separators(c.in_), c.want)
+	}
+}
+
+// The skill directory of an executable in the first directory of a drive is
+// the drive's root, not the bare drive. Windows paths only mean something
+// on Windows.
+@(test)
+the_skill_directory_keeps_the_drive_root :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		d := prose.skill_dir_from_exe_dir(`C:\bin`)
+		defer delete(d)
+		testing.expect_value(t, d, `C:\`)
+		d2 := prose.skill_dir_from_exe_dir(`C:\bin\`)
+		defer delete(d2)
+		testing.expect_value(t, d2, `C:\`)
+		d3 := prose.skill_dir_from_exe_dir(`C:\opt\skills\prose\bin`)
+		defer delete(d3)
+		testing.expect_value(t, d3, `C:\opt\skills\prose`)
+	}
 }

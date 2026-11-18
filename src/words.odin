@@ -43,7 +43,8 @@ load_words :: proc(s: Settings, allocator := context.allocator) -> Word_Set {
 // the reference reads them: one word per line, surrounding whitespace
 // trimmed, blank lines and lines that start with `#` ignored. A file that
 // cannot be read or is not UTF-8 adds nothing; that does not bring the
-// shipped list back in its place. A leading byte order mark is ignored.
+// shipped list back in its place. A leading byte order mark is ignored. A line
+// ends at \n, \r\n or a lone \r.
 load_words_in :: proc(
 	s: Settings,
 	config_dir, skill_dir: string,
@@ -94,7 +95,24 @@ skill_dir_from_exe_dir :: proc(exe_dir: string, allocator := context.allocator) 
 		return ""
 	}
 	parent, _ := os.split_path(trimmed)
-	return strings.clone(strings.trim_right(parent, "/\\") if len(parent) > 1 else parent, allocator)
+	return strings.clone(trim_trailing_separators(parent), allocator)
+}
+
+// trim_trailing_separators drops the separators ("/" and "\") at the end of
+// `p`, except that a root stays one: "/" and "\" alone, and a drive's root
+// `C:\` (or `C:/`), which `C:` would turn into the drive's current
+// directory. It looks at the characters only, so it gives the same answer
+// on every system.
+trim_trailing_separators :: proc(p: string) -> string {
+	trimmed := strings.trim_right(p, "/\\")
+	if trimmed == "" {
+		return p[:min(len(p), 1)]
+	}
+	is_drive := len(trimmed) == 2 && trimmed[1] == ':' && (trimmed[0] | 0x20 >= 'a' && trimmed[0] | 0x20 <= 'z')
+	if is_drive && len(p) > 2 {
+		return p[:3]
+	}
+	return trimmed
 }
 
 // shipped_dictionary_path is the `dictionary.txt` in a skill directory, or
@@ -123,8 +141,17 @@ read_dictionary :: proc(words: ^Word_Set, path: string, allocator: runtime.Alloc
 		return
 	}
 	text := strings.trim_prefix(string(data), "\xEF\xBB\xBF")
+	// A line ends at \n, \r\n or a lone \r. The \n of a \r\n ends an empty
+	// line, and an empty line is skipped.
 	rest := text
-	for line in strings.split_lines_iterator(&rest) {
+	for rest != "" {
+		end := strings.index_any(rest, "\r\n")
+		line := rest
+		if end < 0 {
+			rest = ""
+		} else {
+			line, rest = rest[:end], rest[end + 1:]
+		}
 		word := strings.trim_space(line)
 		if word != "" && !strings.has_prefix(word, "#") {
 			word_set_add(words, word, allocator)
