@@ -621,7 +621,7 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	case .Server:
 		if b.url != "" {
 			selftest_label(w, "url")
-			from := ENV_SERVER if env.lt.server != "" else "config.json"
+			from := ENV_SERVER if env.lt.server != "" else settings_name(s)
 			note := " (http:// assumed: the value has no scheme)" if b.assumed_http else ""
 			fmt.wprintf(w, "%s, from %s%s\n", b.url, from, note)
 		}
@@ -636,7 +636,7 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	case env.lt.username != "":
 		fmt.wprintf(w, "%s, from %s\n", env.lt.username, ENV_USERNAME)
 	case s.username != "":
-		fmt.wprintf(w, "%s, from config.json\n", s.username)
+		fmt.wprintf(w, "%s, from %s\n", s.username, settings_name(s))
 	case:
 		_, _ = io.write_string(w, "(unset)\n")
 	}

@@ -130,8 +130,8 @@ has_http_scheme :: proc(url: string) -> bool {
 }
 
 // settings_name is how a message names the settings file: the whole path
-// when the settings came from a file, else "config.json".
-@(private = "file")
+// when the settings came from a file, else "config.json". The string is
+// `s.path` itself, not a copy.
 settings_name :: proc(s: Settings) -> string {
 	return s.path if s.path != "" else "config.json"
 }
@@ -736,11 +736,12 @@ choose_backend :: proc(
 }
 
 // backend_kind is the backend `choose_backend` picks, and why: `from` is
-// "config.json" when the file names it, the variable or variables that
-// chose it, or "the default" for `.None` with neither.
+// the settings file's path (`settings_name`) when the file names it, the
+// variable or variables that chose it, or "the default" for `.None` with
+// neither.
 backend_kind :: proc(s: Settings, env: Env) -> (kind: Backend_Kind, from: string) {
 	if chosen, ok := s.backend.?; ok {
-		return chosen, "config.json"
+		return chosen, settings_name(s)
 	} else if env.server != "" {
 		return .Server, ENV_SERVER
 	} else if env.api_key != "" && env.username != "" {

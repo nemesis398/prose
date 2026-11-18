@@ -408,8 +408,8 @@ selftest_probes_the_backend :: proc(t: ^testing.T) {
 			&wants,
 			fmt.tprintf("  file          : %s (found)\n", cfg),
 			"  unknown keys  : colour, languagetool.extra\n",
-			"  chosen        : server, from config.json\n",
-			fmt.tprintf("  url           : %s, from config.json\n", url),
+			fmt.tprintf("  chosen        : server, from %s\n", cfg),
+			fmt.tprintf("  url           : %s, from %s\n", url, cfg),
 			fmt.tprintf("  personal      : %s (found)\n", put_mine),
 			"(found, not read: the personal list wins)\n",
 			"  ignoreWords   : 2 words\n",
@@ -516,7 +516,7 @@ selftest_reports_what_is_not_set_up :: proc(t: ^testing.T) {
 	nokey := cli({"--selftest"}, {config_dir = dir})
 	defer cli_done(&nokey)
 	testing.expect_value(t, nokey.code, 2)
-	for line in ([]string{"  chosen        : premium, from config.json\n", "  api key       : (unset)\n", "Not set up\n  LanguageTool Premium has no key"}) {
+	for line in ([]string{fmt.tprintf("  chosen        : premium, from %s\n", cfg), fmt.tprintf("  username      : u, from %s\n", cfg), "  api key       : (unset)\n", "Not set up\n  LanguageTool Premium has no key"}) {
 		testing.expectf(t, strings.contains(nokey.out, line), "lacks %q in:\n%s", line, nokey.out)
 	}
 
