@@ -27,6 +27,8 @@ Check_Options :: struct {
 // freed by the caller with `delete`.
 Check_Error :: struct {
 	message: string,
+	// The fault is this machine's libcurl, not the backend; see `Lt_Error`.
+	local:   bool,
 }
 
 // check_text checks one text, as the reference's `check_text` does: mask it,
@@ -83,7 +85,7 @@ check_text_timed :: proc(
 		if lt_err.message != "" {
 			delete(lt)
 			findings_destroy(findings[:], allocator)
-			return {}, Check_Error{lt_err.message}
+			return {}, Check_Error{lt_err.message, lt_err.local}
 		}
 		append(&findings, ..lt[:])
 		delete(lt)

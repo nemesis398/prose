@@ -796,6 +796,18 @@ post_form_stops_when_libcurl_refuses_an_option :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(herr.message, "TIMEOUT"), "error %q", herr.message)
 	testing.expect_value(t, herr.retryable, false)
 	testing.expect_value(t, fake_lt_requests(fake), 0)
+
+	// Through the check, the failure is the machine's, not the server's:
+	// it is not retried, and not worded as unreachable.
+	backend := server_backend(port)
+	defer delete(backend.url)
+	timing := prose.Lt_Timing{request_s = 5, probe_s = -1, retries = 2, retry_pause_ms = 10}
+	result, err := prose.check_text_timed("A short note.\n", {lang = "en", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	testing.expect(t, err.local)
+	testing.expectf(t, strings.has_prefix(err.message, "libcurl on this machine refused its TIMEOUT option"), "error %q", err.message)
+	testing.expect_value(t, fake_lt_requests(fake), 0)
 }
 
 // A libcurl built without proxy support refuses CURLOPT_NOPROXY, and has no

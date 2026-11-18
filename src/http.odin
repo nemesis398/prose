@@ -32,7 +32,8 @@ Http_Error_Kind :: enum {
 	// The server answered, and the answer cannot be taken: it is too big.
 	Bad_Answer,
 	// The request never left: libcurl is missing a feature or refused an
-	// option.
+	// option. The message starts with "libcurl on this machine", because the
+	// fault is not the server's.
 	Local,
 }
 
@@ -166,7 +167,7 @@ post_form :: proc(
 	curl_init()
 	h := curl.easy_init()
 	if h == nil {
-		return 0, "", Http_Error{message = strings.clone("curl could not start", allocator), kind = .Local}
+		return 0, "", Http_Error{message = strings.clone("libcurl on this machine could not start", allocator), kind = .Local}
 	}
 	defer curl.easy_cleanup(h)
 
@@ -176,7 +177,7 @@ post_form :: proc(
 	// mask instead. A libcurl that takes neither is not used at all.
 	if curl.easy_setopt(h, .PROTOCOLS_STR, cstring("http,https")) != .E_OK &&
 	   curl.easy_setopt(h, CURLOPT_PROTOCOLS, c.long(curl.PROTO_HTTP | curl.PROTO_HTTPS)) != .E_OK {
-		return 0, "", Http_Error{message = strings.clone("curl cannot be limited to http and https", allocator), kind = .Local}
+		return 0, "", Http_Error{message = strings.clone("libcurl on this machine cannot be limited to http and https", allocator), kind = .Local}
 	}
 
 	curl_url := strings.clone_to_cstring(url, allocator)
@@ -222,7 +223,7 @@ post_form :: proc(
 	}
 	if set.failed != "" {
 		delete(sink.body)
-		msg := fmt.aprintf("curl refused its %s option: %s", set.failed, curl.easy_strerror(set.code), allocator = allocator)
+		msg := fmt.aprintf("libcurl on this machine refused its %s option: %s", set.failed, curl.easy_strerror(set.code), allocator = allocator)
 		return 0, "", Http_Error{message = msg, kind = .Local}
 	}
 

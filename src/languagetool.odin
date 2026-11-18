@@ -45,9 +45,12 @@ LT_TIMING :: Lt_Timing {
 // status or why it was unreachable, as the reference's `probe_failure`
 // does, and never the key. Empty means no error; a non-empty one is
 // allocated with the allocator given to `run_languagetool` and freed by the
-// caller with `delete`.
+// caller with `delete`. `local` says the fault is this machine's libcurl,
+// not the backend: the message then is a sentence of its own, not to be
+// worded as the backend's.
 Lt_Error :: struct {
 	message: string,
+	local:   bool,
 }
 
 // LanguageTool rules that argue with the house style, or that fire
@@ -128,7 +131,7 @@ run_languagetool_timed :: proc(
 	ok, detail, fail := probe(backend, timing, allocator)
 	defer delete(detail, allocator)
 	if !ok {
-		return findings, "", Lt_Error{probe_failure(backend, detail, fail, allocator)}
+		return findings, "", Lt_Error{probe_failure(backend, detail, fail, allocator), fail == .Local}
 	}
 	nb := strings.builder_make(allocator)
 	fmt.sbprintf(&nb, "%s: %s", backend.label, detail)
@@ -523,8 +526,11 @@ Lt_Fail :: enum {
 	None,
 	// A status that is not 2xx: `why` is "HTTP 403".
 	Status,
-	// No connection, a timeout, or a libcurl that could not send it.
+	// No connection, or a timeout.
 	Unreachable,
+	// The libcurl on this machine could not send it: a feature it lacks or
+	// an option it refused. The server was never asked.
+	Local,
 	// An answer arrived and it is no answer to a check: too big, not JSON,
 	// not an object.
 	Bad_Answer,
@@ -570,7 +576,14 @@ lt_post :: proc(
 		if err.message != "" {
 			why = err.message
 			retry = err.retryable
-			fail = .Bad_Answer if err.kind == .Bad_Answer else .Unreachable
+			switch err.kind {
+			case .Bad_Answer:
+				fail = .Bad_Answer
+			case .Local:
+				fail = .Local
+			case .Unreachable:
+				fail = .Unreachable
+			}
 		} else if status < 200 || status > 299 {
 			why = fmt.aprintf("HTTP %d", status, allocator = allocator)
 			fail = .Status
@@ -650,6 +663,9 @@ probe_failure :: proc(backend: Backend, detail: string, fail: Lt_Fail, allocator
 		return fmt.aprintf("%s (%s) answered %s", backend.label, backend.url, first, allocator = allocator)
 	case .Bad_Answer:
 		return fmt.aprintf("%s (%s) answered but is not checking: %s", backend.label, backend.url, cut_runes(first, 120), allocator = allocator)
+	case .Local:
+		// Its own sentence: the server was never asked, so it is not named.
+		return strings.clone(first, allocator)
 	case .Unreachable, .None:
 	}
 	return fmt.aprintf("%s (%s) is unreachable: %s", backend.label, backend.url, cut_runes(first, 120), allocator = allocator)

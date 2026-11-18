@@ -396,7 +396,11 @@ check_sources :: proc(a: Cli_Args, stdin: io.Reader, stdout, stderr: io.Writer, 
 			// What was reported so far must reach stdout before the error
 			// reaches stderr, or a terminal shows the error first.
 			_ = io.flush(stdout)
-			fmt.wprintf(stderr, "prose: LanguageTool %s; the check stops rather than use another backend\n", cerr.message)
+			if cerr.local {
+				fmt.wprintf(stderr, "prose: %s; the check stops\n", cerr.message)
+			} else {
+				fmt.wprintf(stderr, "prose: LanguageTool %s; the check stops rather than use another backend\n", cerr.message)
+			}
 			delete(cerr.message)
 			return 2
 		}

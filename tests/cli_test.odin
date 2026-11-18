@@ -774,6 +774,30 @@ a_refusing_backend_is_exit_2 :: proc(t: ^testing.T) {
 	}
 }
 
+// A libcurl that refuses its own options is not a server that cannot be
+// reached: the check stops, with exit 2, and says so in its own words. A
+// timeout of -1 is out of range for CURLOPT_TIMEOUT and makes libcurl refuse.
+@(test)
+a_libcurl_that_refuses_stops_the_check_in_its_own_words :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d", port)
+	defer delete(url)
+	c := cli({CORPUS + "fixture.md"}, {lt = {server = url}, lt_timing = {probe_s = -1, request_s = 5}})
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	testing.expectf(t, strings.has_prefix(c.err, "prose: libcurl on this machine refused "), "stderr %q", c.err)
+	testing.expectf(t, strings.contains(c.err, "TIMEOUT"), "stderr %q", c.err)
+	testing.expectf(t, strings.has_suffix(c.err, "; the check stops\n"), "stderr %q", c.err)
+	testing.expectf(t, !strings.contains(c.err, "unreachable"), "stderr %q", c.err)
+	testing.expectf(t, !strings.contains(c.err, "another backend"), "stderr %q", c.err)
+	testing.expect_value(t, c.out, "")
+	testing.expect_value(t, fake_lt_requests(fake), 0)
+}
+
 // Backend none with LanguageTool asked for: the note says it is off, in
 // both outputs, and the local spelling pass runs, except on Windows.
 @(test)
