@@ -255,7 +255,6 @@ fake_serve :: proc(th: ^thread.Thread) {
 	}
 }
 
-@(private = "file")
 Request :: struct {
 	method, path: string,
 	body:         string,
@@ -264,7 +263,6 @@ Request :: struct {
 // read_request reads one request: the head up to the blank line, then
 // `Content-Length` bytes of body. `raw` holds it all; the strings point
 // into it. False on a timeout, a closed connection or a malformed head.
-@(private = "file")
 read_request :: proc(client: net.TCP_Socket, raw: ^[dynamic]byte) -> (req: Request, ok: bool) {
 	buf: [64 << 10]byte
 	head_end := -1
@@ -279,15 +277,48 @@ read_request :: proc(client: net.TCP_Socket, raw: ^[dynamic]byte) -> (req: Reque
 			return
 		}
 	}
-	head := string(raw[:head_end])
+	length, head_ok := request_length(string(raw[:head_end]))
+	if !head_ok {
+		return
+	}
+	body_start := head_end + 4
+	for len(raw) - body_start < length {
+		n, err := net.recv_tcp(client, buf[:])
+		if err != nil || n == 0 {
+			return
+		}
+		append(raw, ..buf[:n])
+	}
+	// Only now: every append above may move `raw`, and a string taken before
+	// would point into the block it left. Nothing may append to `raw` from
+	// here on.
+	method, path, _ := request_line(string(raw[:head_end]))
+	return Request{method = method, path = path, body = string(raw[body_start:body_start + length])}, true
+}
+
+// request_line is the method and the path of a head, slices of `head`. False
+// unless the first line has exactly three fields.
+@(private = "file")
+request_line :: proc(head: string) -> (method, path: string, ok: bool) {
 	lines := head
-	request_line, _ := strings.split_lines_iterator(&lines)
-	parts := strings.fields(request_line)
+	first, _ := strings.split_lines_iterator(&lines)
+	parts := strings.fields(first)
 	defer delete(parts)
 	if len(parts) != 3 {
 		return
 	}
-	length := 0
+	return parts[0], parts[1], true
+}
+
+// request_length is the `Content-Length` of a head, 0 when it has none. False
+// when the request line is malformed or the length is not a number in range.
+@(private = "file")
+request_length :: proc(head: string) -> (length: int, ok: bool) {
+	if _, _, line_ok := request_line(head); !line_ok {
+		return
+	}
+	lines := head
+	_, _ = strings.split_lines_iterator(&lines)
 	for line in strings.split_lines_iterator(&lines) {
 		colon := strings.index_byte(line, ':')
 		if colon > 0 && strings.equal_fold(strings.trim_space(line[:colon]), "content-length") {
@@ -298,16 +329,7 @@ read_request :: proc(client: net.TCP_Socket, raw: ^[dynamic]byte) -> (req: Reque
 			length = n
 		}
 	}
-	body_start := head_end + 4
-	for len(raw) - body_start < length {
-		n, err := net.recv_tcp(client, buf[:])
-		if err != nil || n == 0 {
-			return
-		}
-		append(raw, ..buf[:n])
-	}
-	// The strings point into `raw`; nothing may append to it from here on.
-	return Request{method = parts[0], path = parts[1], body = string(raw[body_start:body_start + length])}, true
+	return length, true
 }
 
 // fake_handle answers one connection. True means keep it open, unanswered,
