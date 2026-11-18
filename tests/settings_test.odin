@@ -1,5 +1,6 @@
 package prose_tests
 
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -851,6 +852,56 @@ the_key_is_not_read_from_the_settings_file :: proc(t: ^testing.T) {
 	defer done(&b, problem)
 	testing.expect(t, b.key == "" && problem != "")
 	testing.expect(t, !strings.contains(problem, "IN-THE-FILE"))
+}
+
+// An accidental print of a Backend, of the options that carry it, or of the
+// environment must not show a key. Any verb, any depth, by value or by
+// pointer.
+@(test)
+a_printed_backend_does_not_show_the_key :: proc(t: ^testing.T) {
+	SECRET :: "SECRET-KEY-0123456789"
+	b := prose.Backend {
+		kind     = .Premium,
+		url      = "https://api.languagetoolplus.com",
+		username = "me",
+		key      = SECRET,
+		label    = "premium cloud",
+	}
+	opts := prose.Check_Options {
+		lang    = "en",
+		use_lt  = true,
+		backend = b,
+	}
+	env := prose.Env {
+		server   = "https://lt.example.org",
+		username = "me",
+		api_key  = SECRET,
+	}
+	run_env := prose.Run_Env {
+		lt = env,
+	}
+	list := []prose.Backend{b, b}
+	for verb in ([]string{"%v", "%+v", "%#v", "%w", "%s"}) {
+		for arg, i in ([]any{b, &b, opts, &opts, env, &env, run_env, &run_env, list, [1]prose.Backend{b}}) {
+			text := fmt.aprintf(verb, arg)
+			defer delete(text)
+			testing.expectf(t, !strings.contains(text, SECRET), "%s of argument %d shows the key: %s", verb, i, text)
+			testing.expectf(t, !strings.contains(text, "0123456789"), "%s of argument %d shows part of the key", verb, i)
+		}
+	}
+	// It still says what is useful: the rest of the backend, and that a key is there.
+	text := fmt.aprintf("%v", b)
+	defer delete(text)
+	testing.expect(t, strings.contains(text, "https://api.languagetoolplus.com"), text)
+	testing.expect(t, strings.contains(text, "me"), text)
+	testing.expect(t, strings.contains(text, "<redacted>"), text)
+	// No key, nothing to hide, and nothing claimed.
+	none := fmt.aprintf("%v", prose.Backend{kind = .Public, url = "https://x"})
+	defer delete(none)
+	testing.expect(t, !strings.contains(none, "<redacted>"), none)
+	// The key itself is unchanged: only the printing is.
+	testing.expect_value(t, b.key, SECRET)
+	testing.expect_value(t, opts.backend.key, SECRET)
 }
 
 @(test)

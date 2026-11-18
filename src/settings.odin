@@ -49,18 +49,21 @@ Settings_Error :: struct {
 	path, problem: string,
 }
 
-// The three LanguageTool variables, read once. Empty means unset.
+// The three LanguageTool variables, read once. Empty means unset. A print
+// of it shows `<redacted>` for the key too.
 // `env_from_os` allocates; free with `env_destroy`.
 Env :: struct {
 	server, username, api_key: string,
 }
 
-// The chosen backend. `url` is the endpoint with no path (`/v2/check` is for
+// The chosen backend. A print of it, with any verb and at any depth (the
+// options and the environment carry one), shows `<redacted>` where the key
+// is: see `register_secret_formatters`. `url` is the endpoint with no path (`/v2/check` is for
 // the client to add). `username` and `key` are set for `.Premium` only: the
 // public server and a self-hosted one get neither. `label` names the
 // backend in a message: "free cloud", "premium cloud" or "self-hosted", the
 // reference's words. A `.None` backend is all empty. The key lives here and
-// nowhere else; nothing in this package prints it. Strings are allocated
+// nowhere else; nothing in this package prints it, and no print can. Strings are allocated
 // with the allocator given to `choose_backend`; free with `backend_destroy`.
 Backend :: struct {
 	kind:                      Backend_Kind,
@@ -124,6 +127,47 @@ has_http_scheme :: proc(url: string) -> bool {
 @(private = "file")
 settings_name :: proc(s: Settings) -> string {
 	return s.path if s.path != "" else "config.json"
+}
+
+// register_secret_formatters makes `fmt` print a `Backend` and an `Env`
+// with `<redacted>` in place of the key, so that an accidental `%v` of them,
+// or of anything that holds one, cannot leak it. It runs at start, before
+// any thread does, and registers what no one has registered.
+@(init)
+register_secret_formatters :: proc "contextless" () {
+	context = runtime.default_context()
+	if fmt._user_formatters == nil {
+		fmt.set_user_formatters(new(map[typeid]fmt.User_Formatter))
+	}
+	_ = fmt.register_user_formatter(Backend, redact_backend)
+	_ = fmt.register_user_formatter(Env, redact_env)
+}
+
+@(private = "file")
+REDACTED :: "<redacted>"
+
+@(private = "file")
+redact_backend :: proc(fi: ^fmt.Info, arg: any, verb: rune) -> bool {
+	b := (^Backend)(arg.data)^
+	if b.key != "" {
+		b.key = REDACTED
+	}
+	// The copy is printed the usual way: the formatter for its type must not
+	// run again on it.
+	fi.ignore_user_formatters = true
+	fmt.fmt_value(fi, b, verb)
+	return true
+}
+
+@(private = "file")
+redact_env :: proc(fi: ^fmt.Info, arg: any, verb: rune) -> bool {
+	e := (^Env)(arg.data)^
+	if e.api_key != "" {
+		e.api_key = REDACTED
+	}
+	fi.ignore_user_formatters = true
+	fmt.fmt_value(fi, e, verb)
+	return true
 }
 
 settings_destroy :: proc(s: ^Settings, allocator := context.allocator) {
