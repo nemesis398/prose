@@ -529,7 +529,8 @@ Lt_Fail :: enum {
 // Premium, and a rate limit (429), a server error (500, 502, 503, 504), a
 // timeout or a lost connection retried `timing.retries` times, pausing
 // longer each time. A retried 429 is invisible; an unretried one would
-// silently remove findings.
+// silently remove findings. What a retry cannot fix (an answer over the size
+// cap, a refused option, a certificate that does not verify) is not retried.
 //
 // `why` is "" on success, else what went wrong: `HTTP 403` for a status
 // that is not 2xx, the transport's message, or that the answer is not
@@ -562,8 +563,8 @@ lt_post :: proc(
 		retry := false
 		if err.message != "" {
 			why = err.message
-			retry = true
-			fail = .Unreachable
+			retry = err.retryable
+			fail = .Bad_Answer if err.kind == .Bad_Answer else .Unreachable
 		} else if status < 200 || status > 299 {
 			why = fmt.aprintf("HTTP %d", status, allocator = allocator)
 			fail = .Status

@@ -637,6 +637,51 @@ the_probe_names_the_tier_from_software_premium :: proc(t: ^testing.T) {
 	}
 }
 
+// An answer over the size cap cannot shrink on a second try: one request,
+// no retries, and the check stops naming the backend.
+@(test)
+an_answer_over_the_size_cap_is_not_retried :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Too_Big_Answer)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	backend := server_backend(port)
+	defer delete(backend.url)
+	md := read_corpus("fixture.md")
+	defer delete(md)
+	timing := prose.LT_TIMING
+	timing.retry_pause_ms = 10
+	result, err := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	want := fmt.aprintf("self-hosted (%s) answered but is not checking: the answer is too big", backend.url)
+	defer delete(want)
+	testing.expect_value(t, err.message, want)
+	testing.expect_value(t, fake_lt_requests(fake), 1)
+}
+
+// A timeout that libcurl refuses is an error, not a request without a
+// timeout: nothing is sent.
+@(test)
+post_form_stops_when_libcurl_refuses_an_option :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d/v2/check", port)
+	defer delete(url)
+	// A negative timeout is out of range for CURLOPT_TIMEOUT.
+	status, body, herr := prose.post_form(url, {{"text", "x"}}, -1)
+	defer delete(body)
+	defer delete(herr.message)
+	testing.expect_value(t, status, 0)
+	testing.expectf(t, strings.contains(herr.message, "TIMEOUT"), "error %q", herr.message)
+	testing.expect_value(t, herr.retryable, false)
+	testing.expect_value(t, fake_lt_requests(fake), 0)
+}
+
 // The fake's accept loop dying of an error nobody asked for is reported at
 // stop, and stopping does not hang. Linux only: shutdown on a listening
 // socket is what makes accept fail there.

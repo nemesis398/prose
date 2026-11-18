@@ -2,6 +2,7 @@ package prose
 
 import "base:runtime"
 import "core:c"
+import "core:fmt"
 import "core:strings"
 import "core:sync"
 import curl "vendor:curl"
@@ -10,12 +11,29 @@ import curl "vendor:curl"
 // which brings HTTPS with the system's certificates on every platform.
 // `vendor:curl` links libcurl the way each platform needs.
 
-// Why a request got no HTTP answer: no connection, a timeout, a broken
-// reply, an answer too big to take. An empty `message` means there was an
-// answer, whatever its status. A non-empty one is allocated with the
-// allocator given to `post_form`; free it with `delete`.
+// Why a request got no usable HTTP answer: no connection, a timeout, a broken
+// reply, an answer too big to take, or a libcurl that cannot do what the
+// request needs. An empty `message` means there was an answer, whatever its
+// status. A non-empty one is allocated with the allocator given to
+// `post_form`; free it with `delete`.
+//
+// `retryable` says whether asking again could help: a timeout or a lost
+// connection, yes; an answer too big, a refused option or a bad URL, no.
+// `kind` says where it went wrong.
 Http_Error :: struct {
-	message: string,
+	message:   string,
+	kind:      Http_Error_Kind,
+	retryable: bool,
+}
+
+Http_Error_Kind :: enum {
+	// The server could not be reached, or the exchange broke off.
+	Unreachable,
+	// The server answered, and the answer cannot be taken: it is too big.
+	Bad_Answer,
+	// The request never left: libcurl is missing a feature or refused an
+	// option.
+	Local,
 }
 
 // An answer bigger than this is refused. LanguageTool's answer to a full
@@ -102,6 +120,10 @@ form_encode :: proc(fields: [][2]string, allocator := context.allocator) -> stri
 // followed, only http and https are spoken, and the whole exchange,
 // connecting included, must finish within `timeout_s` seconds.
 //
+// Every option is checked: one that libcurl refuses stops the request before
+// it is sent, with an error naming the option, because a timeout or a
+// protocol limit that silently vanished is worse than no request.
+//
 // On an error `status` is 0 and `body` empty. `body` and `err.message` are
 // allocated with `allocator`; the caller frees them with `delete`. The
 // fields may hold a key: nothing here prints them.
@@ -118,7 +140,7 @@ post_form :: proc(
 	curl_init()
 	h := curl.easy_init()
 	if h == nil {
-		return 0, "", Http_Error{strings.clone("curl could not start", allocator)}
+		return 0, "", Http_Error{message = strings.clone("curl could not start", allocator), kind = .Local}
 	}
 	defer curl.easy_cleanup(h)
 
@@ -128,7 +150,7 @@ post_form :: proc(
 	// mask instead. A libcurl that takes neither is not used at all.
 	if curl.easy_setopt(h, .PROTOCOLS_STR, cstring("http,https")) != .E_OK &&
 	   curl.easy_setopt(h, CURLOPT_PROTOCOLS, c.long(curl.PROTO_HTTP | curl.PROTO_HTTPS)) != .E_OK {
-		return 0, "", Http_Error{strings.clone("curl cannot be limited to http and https", allocator)}
+		return 0, "", Http_Error{message = strings.clone("curl cannot be limited to http and https", allocator), kind = .Local}
 	}
 
 	curl_url := strings.clone_to_cstring(url, allocator)
@@ -149,30 +171,74 @@ post_form :: proc(
 	}
 	errbuf: [curl.ERROR_SIZE]byte
 
-	curl.easy_setopt(h, .URL, curl_url)
-	curl.easy_setopt(h, .USERAGENT, cstring(USER_AGENT))
-	curl.easy_setopt(h, .HTTPHEADER, headers)
-	curl.easy_setopt(h, .POSTFIELDSIZE_LARGE, curl.off_t(len(payload)))
-	curl.easy_setopt(h, .POSTFIELDS, raw_data(payload))
-	curl.easy_setopt(h, .WRITEFUNCTION, curl.write_callback(sink_write))
-	curl.easy_setopt(h, .WRITEDATA, &sink)
-	curl.easy_setopt(h, .ERRORBUFFER, &errbuf[0])
-	curl.easy_setopt(h, .TIMEOUT, c.long(timeout_s))
+	set := Options{}
+	option(&set, curl.easy_setopt(h, .URL, curl_url), "URL")
+	option(&set, curl.easy_setopt(h, .USERAGENT, cstring(USER_AGENT)), "USERAGENT")
+	option(&set, curl.easy_setopt(h, .HTTPHEADER, headers), "HTTPHEADER")
+	option(&set, curl.easy_setopt(h, .POSTFIELDSIZE_LARGE, curl.off_t(len(payload))), "POSTFIELDSIZE_LARGE")
+	option(&set, curl.easy_setopt(h, .POSTFIELDS, raw_data(payload)), "POSTFIELDS")
+	// The size limit lives in the write callback.
+	option(&set, curl.easy_setopt(h, .WRITEFUNCTION, curl.write_callback(sink_write)), "WRITEFUNCTION")
+	option(&set, curl.easy_setopt(h, .WRITEDATA, &sink), "WRITEDATA")
+	option(&set, curl.easy_setopt(h, .ERRORBUFFER, &errbuf[0]), "ERRORBUFFER")
+	option(&set, curl.easy_setopt(h, .TIMEOUT, c.long(timeout_s)), "TIMEOUT")
 	// No signals: the timeout must not use SIGALRM in a threaded program.
-	curl.easy_setopt(h, .NOSIGNAL, c.long(1))
+	option(&set, curl.easy_setopt(h, .NOSIGNAL, c.long(1)), "NOSIGNAL")
+	if set.failed != "" {
+		delete(sink.body)
+		msg := fmt.aprintf("curl refused its %s option: %s", set.failed, curl.easy_strerror(set.code), allocator = allocator)
+		return 0, "", Http_Error{message = msg, kind = .Local}
+	}
 
 	code := curl.easy_perform(h)
 	if code != .E_OK {
 		delete(sink.body)
 		detail := string(cstring(&errbuf[0]))
 		if sink.too_big {
-			detail = "the answer is too big"
-		} else if detail == "" {
+			return 0, "", Http_Error{message = strings.clone("the answer is too big", allocator), kind = .Bad_Answer}
+		}
+		if detail == "" {
 			detail = string(curl.easy_strerror(code))
 		}
-		return 0, "", Http_Error{strings.clone(detail, allocator)}
+		return 0, "", Http_Error{message = strings.clone(detail, allocator), retryable = is_transient(code)}
 	}
 	response: c.long
 	curl.easy_getinfo(h, .RESPONSE_CODE, &response)
 	return int(response), string(sink.body[:]), {}
+}
+
+// The first option that libcurl refused, and its answer.
+@(private = "file")
+Options :: struct {
+	failed: string,
+	code:   curl.code,
+}
+
+@(private = "file")
+option :: proc(o: ^Options, code: curl.code, name: string) {
+	if o.failed == "" && code != .E_OK {
+		o.failed, o.code = name, code
+	}
+}
+
+// is_transient reports whether a failed transfer may succeed when tried
+// again: the network let go, or was slow. A certificate that does not verify,
+// a URL that is not one, or an answer that does not fit will not change.
+@(private = "file")
+is_transient :: proc(code: curl.code) -> bool {
+	#partial switch code {
+	case .E_COULDNT_RESOLVE_PROXY,
+	     .E_COULDNT_RESOLVE_HOST,
+	     .E_COULDNT_CONNECT,
+	     .E_OPERATION_TIMEDOUT,
+	     .E_GOT_NOTHING,
+	     .E_SEND_ERROR,
+	     .E_RECV_ERROR,
+	     .E_PARTIAL_FILE,
+	     .E_HTTP2,
+	     .E_HTTP2_STREAM,
+	     .E_SSL_CONNECT_ERROR:
+		return true
+	}
+	return false
 }
