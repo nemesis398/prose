@@ -35,6 +35,9 @@ lacks() { case $1 in *"$2"*) return 1 ;; *) return 0 ;; esac }
 lines() { # number of lines in the text, with no trailing newline counted
 	printf '%s\n' "$1" | awk 'END { print NR }'
 }
+is_seconds() { # true when the file holds one line of digits
+	[ -s "$1" ] && [ -z "$(sed 's/[0-9]//g' "$1" | tr -d '\n')" ]
+}
 bin_empty() { # true when the bin directory is missing or has nothing in it
 	[ ! -d "$1" ] || [ -z "$(ls -A "$1")" ]
 }
@@ -81,6 +84,34 @@ esac
 EOF
 chmod 755 "$fake/uname"
 
+# A sysctl that answers only the Rosetta probe, as macOS does: FAKE_TRANSLATED
+# is the value of sysctl.proc_translated, unset where the oid does not exist
+# (an Intel Mac).
+cat >"$fake/sysctl" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = -n ] && [ "${2:-}" = sysctl.proc_translated ] && [ -n "${FAKE_TRANSLATED:-}" ]; then
+	echo "$FAKE_TRANSLATED"
+	exit 0
+fi
+echo "sysctl: unknown oid 'sysctl.proc_translated'" >&2
+exit 1
+EOF
+chmod 755 "$fake/sysctl"
+
+# A timeout that records the limit it was given and shortens the wait to one
+# second, whatever the script asked for. Only cases that put $withtimeout on
+# PATH use it.
+real_timeout=$(command -v timeout || :)
+withtimeout="$work/withtimeout"
+mkdir -p "$withtimeout"
+cat >"$withtimeout/timeout" <<TEOF
+#!/bin/sh
+echo "\$1" >"$work/timeout-used"
+shift
+exec "$real_timeout" 1 "\$@"
+TEOF
+chmod 755 "$withtimeout/timeout"
+
 # A curl that writes a partial file and then hangs, to test the signal trap.
 slowfake="$work/slowfake"
 mkdir -p "$slowfake"
@@ -100,7 +131,7 @@ chmod 755 "$slowfake/curl"
 # It does not hold sha256sum or shasum; cases add what they want.
 bare="$work/bare"
 mkdir -p "$bare"
-for t in sh sed awk tr mktemp mkdir rm mv chmod curl kill cat dirname sleep head; do
+for t in sh sed awk tr mktemp mkdir rm mv chmod curl kill cat dirname sleep head find; do
 	src=$(command -v "$t") && ln -s "$src" "$bare/$t"
 done
 cp "$fake/uname" "$bare/uname"
@@ -262,6 +293,25 @@ suite_run() {
 		check "$1 $2 leaves bin/ empty" bin_empty "$bin"
 	done
 
+	# a shell under Rosetta on Apple silicon reports x86_64; sysctl says so
+	setup_root "$root"
+	run "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
+	check "Rosetta: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+	check "Rosetta: installs the macos-arm64 asset" \
+		cmp -s "$release/v0.1.0/prose-check-macos-arm64" "$bin/prose-check"
+	setup_root "$root"
+	run "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=0" "$root"
+	check "Darwin x86_64, sysctl says native: still refused (rc $rc)" [ "$rc" -ne 0 ]
+	check "Darwin x86_64, sysctl says native: names the platform (got: $out)" contains "$out" "unsupported platform: Darwin x86_64"
+	setup_root "$root"
+	invoke "$bare" "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
+	check "Darwin x86_64 with no sysctl: refused (rc $rc)" [ "$rc" -ne 0 ]
+	check "Darwin x86_64 with no sysctl: names the platform (got: $out)" contains "$out" "unsupported platform: Darwin x86_64"
+	setup_root "$root"
+	run "FAKE_OS=Linux" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
+	check "Linux x86_64 ignores the Rosetta probe: linux-x86_64 asset" \
+		cmp -s "$release/v0.1.0/prose-check-linux-x86_64" "$bin/prose-check"
+
 	# 3. a wrong checksum is refused with no binary and no temp file
 	setup_root "$root"
 	run "PROSE_RELEASE_BASE=file://$bad_release" "$root"
@@ -317,6 +367,26 @@ suite_run() {
 	check "bin/prose-check is a directory: refused (rc $rc)" [ "$rc" -ne 0 ]
 	check "bin/prose-check is a directory: one line (got: $out)" [ "$(lines "$out")" -eq 1 ]
 	check "bin/prose-check is a directory: nothing moved into it" bin_empty "$bin/prose-check"
+
+	# a --version that hangs is cut off by timeout, when there is a timeout
+	if [ -n "$real_timeout" ]; then
+		setup_root "$root"
+		mkdir -p "$bin"
+		printf '#!/bin/sh\nexec sleep 5\n' >"$bin/prose-check"
+		chmod 755 "$bin/prose-check"
+		rm -f "$work/timeout-used"
+		invoke "$withtimeout:$fake:$PATH" "$root"
+		check "hanging --version: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+		check "hanging --version: the probe ran under timeout" [ -e "$work/timeout-used" ]
+		check "hanging --version: timeout was given a number of seconds" is_seconds "$work/timeout-used"
+		check "hanging --version: replaced" [ "$("$bin/prose-check" --version)" = "prose-check 0.1.0" ]
+	fi
+
+	# without timeout on PATH the probe still works, as before
+	setup_root "$root"
+	run "$root"
+	run_with_path "$root" "$bare"
+	check "no timeout on PATH: a matching binary is kept (got $rc: $out)" contains "$out" "already installed"
 
 	# 7. a missing release names the URL, and leaves nothing
 	setup_root "$root"
@@ -432,6 +502,31 @@ EOF
 	check "a version that is not a version is refused" [ "$rc" -ne 0 ]
 	check "a bad version leaves bin/ empty" bin_empty "$bin"
 
+	# the version is the top-level key, in any layout of the manifest
+	version_case() { # NAME MANIFEST-TEXT
+		setup_root "$root"
+		printf '%s\n' "$2" >"$root/.claude-plugin/plugin.json"
+		run "$root"
+		check "manifest, $1: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+		check "manifest, $1: installs 0.1.0" [ "$("$bin/prose-check" --version 2>&1)" = "prose-check 0.1.0" ]
+	}
+	version_case "minified" '{"name":"prose","version":"0.1.0"}'
+	version_case "nested key after the top-level one, minified" '{"name":"prose","version":"0.1.0","engines":{"version":"9.9.9"}}'
+	version_case "nested key before the top-level one, minified" '{"engines":{"version":"9.9.9"},"version":"0.1.0"}'
+	version_case "nested key first, on lines of its own" '{
+  "dependencies": {
+    "version": "9.9.9"
+  },
+  "version": "0.1.0"
+}'
+	version_case "spaces before the colon" '{ "name": "prose", "version"   :   "0.1.0" }'
+	version_case "a string that mentions version" '{"description":"the \"version\": \"9.9.9\" is old","version":"0.1.0"}'
+	setup_root "$root"
+	printf '%s\n' '{"engines":{"version":"9.9.9"}}' >"$root/.claude-plugin/plugin.json"
+	run "$root"
+	check "manifest with only a nested version: refused (rc $rc)" [ "$rc" -ne 0 ]
+	check "manifest with only a nested version: names PROSE_VERSION (got: $out)" contains "$out" "PROSE_VERSION"
+
 	# 11. an unknown option is a usage error
 	setup_root "$root"
 	run "$root" --bogus
@@ -462,6 +557,40 @@ EOF
 	rc=$?
 	check "run from another directory: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
 	check "run from another directory: binary lands beside the script" [ -x "$bin/prose-check" ]
+
+	# a CDPATH in the environment does not redirect the lookup of the script's folder
+	setup_root "$root"
+	mkdir -p "$base/cdp/prose"
+	out=$(cd "$root/skills" && CDPATH="$base/cdp" PATH="$fake:$PATH" "$test_sh" prose/install 2>&1)
+	rc=$?
+	check "CDPATH set: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+	check "CDPATH set: binary lands beside the script" [ -x "$bin/prose-check" ]
+	check "CDPATH set: one line of output (got: $out)" [ "$(lines "$out")" -eq 1 ]
+
+	# 15. a leftover bin/.prose-install.* from a killed run is swept, once it is
+	# old, and nothing else in bin/ is touched
+	setup_root "$root"
+	mkdir -p "$bin/.prose-install.OLDDIR" "$bin/.prose-install.NEWDIR" "$bin/keep.d"
+	: >"$bin/.prose-install.OLDDIR/SHA256SUMS"
+	: >"$bin/.prose-install.OLDFILE"
+	: >"$bin/.prose-installer.old"
+	: >"$bin/old-other-file"
+	touch -t 200001010000 "$bin/.prose-install.OLDDIR/SHA256SUMS" "$bin/.prose-install.OLDDIR" "$bin/.prose-install.OLDFILE" \
+		"$bin/.prose-installer.old" "$bin/old-other-file" "$bin/keep.d"
+	run "$root"
+	check "stale sweep: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+	check "stale sweep: an old leftover folder is gone" [ ! -e "$bin/.prose-install.OLDDIR" ]
+	check "stale sweep: an old leftover file is gone" [ ! -e "$bin/.prose-install.OLDFILE" ]
+	check "stale sweep: a fresh leftover is kept (it may belong to a run in progress)" [ -d "$bin/.prose-install.NEWDIR" ]
+	check "stale sweep: a name that only starts alike is kept" [ -e "$bin/.prose-installer.old" ]
+	check "stale sweep: another old file is kept" [ -e "$bin/old-other-file" ]
+	check "stale sweep: another old folder is kept" [ -d "$bin/keep.d" ]
+	# the sweep runs also when the binary is already installed
+	mkdir -p "$bin/.prose-install.OLD2"
+	touch -t 200001010000 "$bin/.prose-install.OLD2"
+	run "$root"
+	check "stale sweep, binary already installed: says so (got: $out)" contains "$out" "already installed"
+	check "stale sweep, binary already installed: old leftover is gone" [ ! -e "$bin/.prose-install.OLD2" ]
 }
 
 for suite_spec in "plain:$work/plain" "unicode-and-space:$work/a dir/ünï"; do

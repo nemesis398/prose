@@ -42,16 +42,63 @@ case $0 in
 *) script_dir=. ;;
 esac
 [ -n "$script_dir" ] || script_dir=/
-script_dir=$(cd -- "$script_dir" && pwd -P) || fail "cannot find the folder of this script"
+script_dir=$(CDPATH='' cd -- "$script_dir" && pwd -P) || fail "cannot find the folder of this script"
 bin_dir="$script_dir/bin"
 target="$bin_dir/prose-check"
 
 # The version: PROSE_VERSION, else the plugin manifest two folders up.
+#
+# manifest_version FILE prints the string value of the top-level "version" key
+# of the JSON in FILE, and nothing when there is none. A line-based sed would
+# take a "version" of a nested object, or the last one of a minified file, or
+# miss one with spaces before the colon, so awk walks the characters instead:
+# it skips strings, counts braces and brackets, and reads the value of the
+# key found at depth 1.
+manifest_version() {
+	awk '
+	{ s = s $0 "\n" }
+	END {
+		n = length(s); depth = 0; i = 1
+		while (i <= n) {
+			c = substr(s, i, 1)
+			if (c == "{" || c == "[") { depth++; i++; continue }
+			if (c == "}" || c == "]") { depth--; i++; continue }
+			if (c != "\"") { i++; continue }
+			# A string runs from i to the next quote that no backslash escapes.
+			str = ""
+			j = i + 1
+			while (j <= n) {
+				d = substr(s, j, 1)
+				if (d == "\\") { str = str substr(s, j, 2); j += 2; continue }
+				if (d == "\"") break
+				str = str d
+				j++
+			}
+			i = j + 1
+			if (depth != 1 || str != "version") continue
+			# The key: a colon, then a string value. Anything else is no version.
+			while (i <= n && substr(s, i, 1) ~ /[ \t\r\n]/) i++
+			if (substr(s, i, 1) != ":") continue
+			i++
+			while (i <= n && substr(s, i, 1) ~ /[ \t\r\n]/) i++
+			if (substr(s, i, 1) != "\"") exit
+			val = ""
+			for (j = i + 1; j <= n; j++) {
+				d = substr(s, j, 1)
+				if (d == "\\" || d == "\"") break
+				val = val d
+			}
+			if (substr(s, j, 1) == "\"") print val
+			exit
+		}
+	}' "$1"
+}
+
 manifest="$script_dir/../../.claude-plugin/plugin.json"
 version=${PROSE_VERSION:-}
 if [ -z "$version" ]; then
 	[ -r "$manifest" ] || fail "no version: $manifest is missing, set PROSE_VERSION"
-	version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$manifest" | sed 1q)
+	version=$(manifest_version "$manifest")
 	[ -n "$version" ] || fail "no version in $manifest, set PROSE_VERSION"
 fi
 case $version in
@@ -65,12 +112,34 @@ case "$os $arch" in
 "Linux x86_64") asset=prose-check-linux-x86_64 ;;
 "Linux aarch64") asset=prose-check-linux-arm64 ;;
 "Darwin arm64") asset=prose-check-macos-arm64 ;;
+"Darwin x86_64")
+	# A shell that runs under Rosetta on Apple silicon reports x86_64, and the
+	# machine is arm64. sysctl prints 1 for a translated process.
+	if command -v sysctl >/dev/null 2>&1 && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+		asset=prose-check-macos-arm64
+	else
+		fail "unsupported platform: $os $arch"
+	fi
+	;;
 *) fail "unsupported platform: $os $arch" ;;
 esac
 
-# A binary that already reports this version stays.
+# A run that was killed outright (SIGKILL) cannot clean up, and leaves a
+# .prose-install.* of its own in bin/. Sweep the ones older than an hour, which
+# no running install can still own, and nothing else.
+if [ -d "$bin_dir" ]; then
+	find "$bin_dir" -maxdepth 1 -name '.prose-install.*' -mmin +60 -exec rm -rf -- {} + 2>/dev/null || :
+fi
+
+# A binary that already reports this version stays. Its --version gets ten
+# seconds where timeout exists, so a binary that hangs cannot hang the install;
+# without timeout the probe runs as it always did.
 if [ "$force" -eq 0 ] && [ -f "$target" ] && [ -x "$target" ]; then
-	have=$("$target" --version 2>/dev/null) || have=
+	if command -v timeout >/dev/null 2>&1; then
+		have=$(timeout 10 "$target" --version 2>/dev/null) || have=
+	else
+		have=$("$target" --version 2>/dev/null) || have=
+	fi
 	if [ "$have" = "prose-check $version" ]; then
 		printf 'prose-check %s is already installed at %s\n' "$version" "$target"
 		exit 0
