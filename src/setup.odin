@@ -284,8 +284,18 @@ resolve_link :: proc(path: string, allocator: runtime.Allocator) -> (target: str
 			delete(cur, allocator)
 			cur = dest
 		} else {
+			// The kernel reads a relative link from the directory the link is
+			// really in. Cleaning `..` out of the path as written gives
+			// another file when a directory on the way is a link itself, so
+			// the directory is resolved first (on Windows the OS call only
+			// makes it absolute).
 			dir, _ := os.split_path(cur)
-			joined, _ := os.join_path({dir, dest}, allocator)
+			base, aerr := os.get_absolute_path(dir if dir != "" else ".", allocator)
+			if aerr != nil {
+				base = strings.clone(dir, allocator)
+			}
+			joined, _ := os.join_path({base, dest}, allocator)
+			delete(base, allocator)
 			delete(dest, allocator)
 			delete(cur, allocator)
 			cur = joined
@@ -310,6 +320,9 @@ read_stored :: proc(target, path: string, allocator: runtime.Allocator) -> (valu
 	size, regular := info.size, info.type == .Regular
 	os.file_info_delete(info, allocator)
 	if !regular {
+		if target != path {
+			return nil, setup_fail(path, allocator, "%s: is not a regular file (it is a link to %s)", path, target)
+		}
 		return nil, setup_fail(path, allocator, "%s: is not a regular file", path)
 	}
 	if size > MAX_SETTINGS_BYTES {

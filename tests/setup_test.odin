@@ -1376,3 +1376,76 @@ a_link_loop_is_refused :: proc(t: ^testing.T) {
 		testing.expect_value(t, info.type, os.File_Type.Symlink)
 	}
 }
+
+// The kernel reads a relative link from the directory the link is really in.
+// Through a symlinked directory that is not the directory in the path, and
+// cleaning `..` out of the path by hand gives another file.
+@(test)
+a_relative_link_is_read_from_the_directory_it_is_really_in :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		real := join(dir, "real", "inner")
+		defer delete(real)
+		testing.expect(t, os.make_directory_all(real) == nil)
+		via := join(dir, "via") // a symlink to real/inner
+		defer delete(via)
+		testing.expect(t, os.symlink("real/inner", via) == nil)
+		target := join(dir, "real", "target.json")
+		defer delete(target)
+		put(t, target, `{"languageRule": "keep"}`)
+		// real/inner/config.json -> ../target.json, which is real/target.json
+		link := join(real, "config.json")
+		defer delete(link)
+		testing.expect(t, os.symlink("../target.json", link) == nil)
+		decoy := join(dir, "target.json") // where the cleaned path would go
+		defer delete(decoy)
+
+		// Reached through the symlinked directory.
+		cfg := join(dir, "via")
+		defer delete(cfg)
+		c := values(cfg, `{"languagetool": {"backend": "public"}}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 0)
+		testing.expect(t, !os.exists(decoy), "the file beside the symlinked directory was made")
+		got := read(target)
+		defer delete(got)
+		expect_contains(t, got, `"languageRule": "keep"`)
+		expect_contains(t, got, `"backend": "public"`)
+		info, err := os.lstat(link, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.type, os.File_Type.Symlink)
+	}
+}
+
+@(test)
+a_link_to_a_directory_is_refused_clearly :: proc(t: ^testing.T) {
+	when ODIN_OS != .Windows {
+		dir := scratch(t)
+		defer scratch_done(dir)
+		cfg := join(dir, "cfg")
+		defer delete(cfg)
+		store := join(dir, "store")
+		defer delete(store)
+		testing.expect(t, os.make_directory(cfg) == nil)
+		testing.expect(t, os.make_directory(store) == nil)
+		link := join(cfg, "config.json")
+		defer delete(link)
+		testing.expect(t, os.symlink(store, link) == nil)
+		c := values(cfg, `{"languageRule": "R"}`)
+		defer cli_done(&c)
+		testing.expect_value(t, c.code, 2)
+		expect_contains(t, c.err, "is not a regular file")
+		expect_contains(t, c.err, link)
+		expect_contains(t, c.err, store)
+		expect_contains(t, c.err, "unchanged")
+		listing := names(store)
+		defer delete(listing)
+		testing.expect_value(t, listing, "")
+		info, err := os.lstat(link, context.allocator)
+		defer os.file_info_delete(info, context.allocator)
+		testing.expect(t, err == nil)
+		testing.expect_value(t, info.type, os.File_Type.Symlink)
+	}
+}
