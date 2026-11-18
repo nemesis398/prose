@@ -241,6 +241,13 @@ post_form :: proc(
 	}
 	response: c.long
 	curl.easy_getinfo(h, .RESPONSE_CODE, &response)
+	if response == 0 {
+		// No status line: libcurl before 7.66 takes any reply as HTTP/0.9
+		// and calls it a success. Newer libcurl refuses it ("Received
+		// HTTP/0.9 when not allowed"), which a retry cannot cure either.
+		delete(sink.body)
+		return 0, "", Http_Error{message = strings.clone("the answer is not HTTP: it has no status line", allocator), kind = .Bad_Answer}
+	}
 	return int(response), string(sink.body[:]), {}
 }
 

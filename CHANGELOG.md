@@ -7,7 +7,7 @@ Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 ## [0.1.1] - 2026-11-18
 
 A patch release. A setup or a settings file that worked on 0.1.0 keeps
-working; the two places where 0.1.1 first refused one are fixed again below.
+working.
 
 ### Added
 
@@ -77,15 +77,9 @@ working; the two places where 0.1.1 first refused one are fixed again below.
 
 ### Fixed
 
-- A `LANGUAGETOOL_SERVER` without a scheme, such as `localhost:8081`, works
-  again. 0.1.0 passed it to curl, which reads it as http; 0.1.1 first refused
-  it. Only the variable gets this: the value in `config.json` needs a scheme,
-  as it did in 0.1.0, and a scheme other than http or https (`ftp://`,
-  `file://`) is still refused.
-- A trailing comma in `config.json`, as in `{"ignoreWords": ["a",]}`, works
-  again. The checker reads the file, setup takes it as input and writes strict
-  JSON, so a run of setup removes the comma. A key given twice is refused, as
-  it was in 0.1.0.
+- An answer with no HTTP status line is a failed request that is not retried.
+  libcurl before 7.66 took such a reply as HTTP/0.9 and as a success, so the
+  check went on with an empty answer.
 - A keycap whose digit is in no emoji range no longer slips through
   `EMOJI-BODY` in body text, and a keycap on `*` is found although the mask
   reads a lone `*` as markup.
