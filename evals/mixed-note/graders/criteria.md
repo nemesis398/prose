@@ -18,9 +18,14 @@ passes only if all of these hold:
 - any heading it adds is in English, and the existing English headings
   (`Oven Log`, `Maintenance`, `Suppliers`) are not translated;
 - it states the facts listed above and invents no event, name or number; a
-  connecting word the facts imply (such as "deshalb"), a calendar date worked
-  out from today's date, a heading label, and text copied from the existing
-  note are not inventions;
-- the note text contains no em dash (U+2014), and at most one spaced en dash;
-  the comments around it may name a character they removed;
+  connecting word the facts imply (such as "deshalb"), a heading label, and
+  text copied from the existing note are not inventions;
+- the note text contains no em dash (U+2014), and at most one spaced en dash.
+  A reply may name the em dash character when it explains a change, and
+  naming it does not count as using one; a dash in the note text does;
+- the body text, the bullets and the instruction contain no emoji. The user's
+  shorthand labels its lines with emoji; an entry may keep one only as the
+  first character of a heading, one per heading, and none twice in the note.
+  The labels are moved into such a heading or dropped, not copied into body
+  text or bullets;
 - it does not claim that a tool checked the text.

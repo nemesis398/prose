@@ -30,6 +30,10 @@ dem ersten Backen.
 Das Mehl kommt von der Mühle im Nachbardorf, geliefert wird dienstags.
 ```
 
-What happened today: the oven's left door seal tore at 5 am, so the first batch
-came out pale. Mia taped it for now. A new seal is ordered and arrives
-Thursday. Whoever opens tomorrow should check the tape before the first bake.
+What happened today, in my own shorthand:
+
+- 🔧 Problem: the oven's left door seal tore at 5 am, so the first batch came
+  out pale.
+- 🩹 Now: Mia taped it for now.
+- 📦 Next: a new seal is ordered and arrives Thursday.
+- ✅ Tomorrow: whoever opens should check the tape before the first bake.
