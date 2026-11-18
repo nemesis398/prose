@@ -89,14 +89,19 @@ emoji_destroy :: proc(emoji: []Emoji, allocator := context.allocator) {
 	delete(emoji, allocator)
 }
 
-// runes_to_string encodes `src` as UTF-8 in a new string the caller frees.
+// runes_to_string encodes `src` as UTF-8 in a new string the caller frees. If
+// the allocator cannot supply the bytes the result is "", which is also the
+// result for an empty `src`.
 runes_to_string :: proc(src: []rune, allocator := context.allocator) -> string {
 	size := 0
 	for r in src {
 		_, w := utf8.encode_rune(r)
 		size += w
 	}
-	buf := make([]byte, size, allocator)
+	buf, err := make([]byte, size, allocator)
+	if err != nil {
+		return ""
+	}
 	at := 0
 	for r in src {
 		b, w := utf8.encode_rune(r)

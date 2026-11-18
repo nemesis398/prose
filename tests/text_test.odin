@@ -1,6 +1,7 @@
 package prose_tests
 
 import "core:encoding/json"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -107,6 +108,57 @@ excerpt_never_crosses_a_line_and_handles_empty_input :: proc(t: ^testing.T) {
 	got4 := prose.excerpt_at(sp, 2)
 	defer delete(got4)
 	testing.expect_value(t, got4, "hi")
+}
+
+// A failing allocator is a result, not a crash: the excerpt is "" and nothing
+// leaks. `fail_from` is the number of allocations that succeed first.
+@(private = "file")
+Flaky :: struct {
+	inner:     mem.Allocator,
+	fail_from: int,
+	count:     int,
+}
+
+@(private = "file")
+flaky_proc :: proc(
+	data: rawptr,
+	mode: mem.Allocator_Mode,
+	size, alignment: int,
+	old_memory: rawptr,
+	old_size: int,
+	loc := #caller_location,
+) -> (
+	[]byte,
+	mem.Allocator_Error,
+) {
+	f := (^Flaky)(data)
+	if mode == .Alloc || mode == .Alloc_Non_Zeroed || mode == .Resize || mode == .Resize_Non_Zeroed {
+		f.count += 1
+		if f.count > f.fail_from {
+			return nil, .Out_Of_Memory
+		}
+	}
+	return f.inner.procedure(f.inner.data, mode, size, alignment, old_memory, old_size, loc)
+}
+
+@(test)
+excerpt_survives_a_failing_allocator :: proc(t: ^testing.T) {
+	long := strings.repeat("x", 100)
+	defer delete(long)
+	src := runes(long)
+	defer delete(src)
+	// 0: the text itself cannot be allocated. 1: the ellipses cannot be added.
+	for fail_from in 0 ..= 1 {
+		f := Flaky{inner = context.allocator, fail_from = fail_from}
+		got := prose.excerpt_at(src, 50, allocator = mem.Allocator{flaky_proc, &f})
+		testing.expectf(t, got == "", "fail_from %d: got %q, want an empty excerpt", fail_from, got)
+		delete(got)
+	}
+	// And with room enough it still works through the same allocator.
+	f := Flaky{inner = context.allocator, fail_from = 2}
+	got := prose.excerpt_at(src, 50, allocator = mem.Allocator{flaky_proc, &f})
+	defer delete(got)
+	testing.expect_value(t, len(got), 69 + 6)
 }
 
 @(test)
