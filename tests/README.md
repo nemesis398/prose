@@ -30,24 +30,70 @@ last commit that holds `reference/` is `2db5d1a`, so
 How each set was made, in that tree:
 
 - `golden/` and `golden-lt/`: `reference/make_golden.sh` runs the reference
-  over `corpus/` with no settings and no credentials. It needs a server on
+  over `corpus/` with no settings and no credentials, in an empty `HOME`
+  and `XDG_CONFIG_HOME` and a clean environment. It needs a server on
   `127.0.0.1:18099`: `fake_lt.py` replays `lt-recordings/`, `record_lt.py`
   records what is missing. The script fails on a finding `LT-CHUNK-FAILED`,
-  which means a recording is missing.
+  which means a recording is missing. It also writes `golden/fixture.txt`,
+  the text report of `fixture.md`, and applies the two hand corrections below.
 - `lt-recordings/`: `record_lt.py` forwarded each unknown request once to
   LanguageTool Premium and stored the response body unchanged. That needs a
   Premium account and key in `LANGUAGETOOL_USERNAME` and
   `LANGUAGETOOL_API_KEY`, and it spends the paid API, so it does not retry.
   `markup2.md` was added after the one recording session and has no
   `golden-lt/` file.
-- `mask/`: `reference/dump_mask.py` and `reference/dump_blocks.py`, run with
-  `python3 -B -I`, wrote the masking and the blocks of every corpus file.
-- Two notes were corrected by hand after the run (`empty` and `only-code` in
+- `mask/`: `reference/dump_mask.py` and `reference/dump_blocks.py` write the
+  masking and the blocks of every corpus file.
+- Two notes are corrected by hand after the run (`empty` and `only-code` in
   `golden-lt/`), because the reference probes LanguageTool for a text with no
-  prose left and the port sends nothing for one. `make_golden.sh` shows how.
-  A few expectations in `rules_test.odin` are hand-written too, where the
-  reference crashed or was wrong; each says so in its comment.
+  prose left and the port sends nothing for one. `make_golden.sh` does it with
+  `sed` at its end. A few expectations in `rules_test.odin` are hand-written
+  too, where the reference crashed or was wrong; each says so in its comment.
 
-To regenerate, check out `2db5d1a`, run the scripts there, and copy the output
-into `tests/`. Then read the diff: a golden that moved for no reason found in
-the port is a bug in one of the two.
+## Regenerating
+
+Needs `git`, `python3` and `bash`; no network, because `fake_lt.py` answers
+from the recordings. Run it from the root of this repository. The reference is
+unpacked into a scratch folder, so nothing in your checkout changes until you
+copy a result back. The steps below were run against the current goldens and
+reproduce every file in `golden/`, `golden-lt/` and `mask/` byte for byte.
+
+```sh
+PROSE=$PWD
+REF=$(mktemp -d)
+git archive 2db5d1a | tar -x -C "$REF"
+cd "$REF"
+
+# 1. The fake LanguageTool on 127.0.0.1:18099, in the background.
+python3 -B reference/fake_lt.py --port 18099 &
+FAKE=$!
+sleep 1
+
+# 2. golden/, golden-lt/ and golden/fixture.txt. Start from empty folders, so
+# a file the script no longer writes cannot hide.
+rm -rf tests/golden tests/golden-lt tests/mask
+PORT=18099 bash reference/make_golden.sh
+
+# 3. mask/: the masking and the language blocks of every corpus file.
+mkdir tests/mask
+PYTHONDONTWRITEBYTECODE=1 python3 -B -I reference/dump_mask.py tests/mask tests/corpus/*.md
+PYTHONDONTWRITEBYTECODE=1 python3 -B -I reference/dump_blocks.py tests/mask tests/corpus/*.md
+
+# 4. Stop the server and compare with the current files. An empty diff means
+# the goldens still are what the reference writes.
+kill "$FAKE"
+for d in golden golden-lt mask; do diff -r "$REF/tests/$d" "$PROSE/tests/$d"; done
+```
+
+To change a golden on purpose, copy the folder from `$REF/tests/` over the one
+in `tests/`, then read the diff in git: a golden that moved for no reason found
+in the port is a bug in one of the two. Delete `$REF` when you are done.
+
+To record a request that has no recording yet, start `record_lt.py` in place
+of step 1, with the Premium account in the environment, and expect it to spend
+the paid API:
+
+```sh
+LANGUAGETOOL_USERNAME=... LANGUAGETOOL_API_KEY=... \
+  python3 -B reference/record_lt.py --port 18099 --dir "$PROSE/tests/lt-recordings" &
+```
