@@ -661,6 +661,87 @@ an_answer_over_the_size_cap_is_not_retried :: proc(t: ^testing.T) {
 	testing.expect_value(t, fake_lt_requests(fake), 1)
 }
 
+// A 429 is retried and the retry is invisible: the same note and findings as
+// without it, one request more.
+@(test)
+a_rate_limited_request_is_retried :: proc(t: ^testing.T) {
+	steady, steady_port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, steady)
+	limited, limited_port := fake_lt_start(RECORDINGS, .Rate_Limit_First)
+	defer fake_lt_stop(t, limited)
+	if !testing.expect(t, steady != nil && limited != nil) {
+		return
+	}
+	md := read_corpus("fixture.md")
+	defer delete(md)
+	words := golden_words()
+	defer prose.word_set_destroy(&words)
+	timing := prose.LT_TIMING
+	timing.retry_pause_ms = 10
+
+	a := server_backend(steady_port)
+	defer delete(a.url)
+	b := server_backend(limited_port)
+	defer delete(b.url)
+	want, werr := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = a, words = words}, timing)
+	defer prose.file_result_destroy(&want)
+	defer delete(werr.message)
+	got, gerr := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = b, words = words}, timing)
+	defer prose.file_result_destroy(&got)
+	defer delete(gerr.message)
+	testing.expect_value(t, werr.message, "")
+	testing.expect_value(t, gerr.message, "")
+	testing.expect_value(t, got.note, want.note)
+	expect_findings(t, "after a 429", 0, got.findings, want.findings)
+	testing.expect_value(t, fake_lt_requests(limited), fake_lt_requests(steady) + 1)
+}
+
+// The account and the key travel as form fields to the Premium backend, and
+// show up in no message and no note, whatever goes wrong.
+@(test)
+premium_credentials_are_sent_and_never_shown :: proc(t: ^testing.T) {
+	USER :: "account-name-7"
+	KEY :: "S3CRET-key-8"
+	for mode in ([]Fake_Mode{.Replay, .Refuse_403, .No_Matches_After_Probe, .Fail_Second_Chunk}) {
+		fake, port := fake_lt_start(RECORDINGS, mode)
+		defer fake_lt_stop(t, fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		backend := prose.Backend {
+			kind     = .Premium,
+			url      = fmt.aprintf("http://127.0.0.1:%d", port),
+			username = USER,
+			key      = KEY,
+			label    = "premium cloud",
+		}
+		defer delete(backend.url)
+		md := read_corpus("fixture.md")
+		defer delete(md)
+		timing := prose.LT_TIMING
+		timing.retry_pause_ms = 10
+		result, err := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = backend}, timing)
+		defer prose.file_result_destroy(&result)
+		defer delete(err.message)
+
+		sent := fake_lt_requests(fake)
+		testing.expectf(t, sent > 0, "%v: no request", mode)
+		testing.expectf(t, fake_lt_requests_with_field(fake, "username", USER) == sent, "%v: not every request carries the account", mode)
+		testing.expectf(t, fake_lt_requests_with_field(fake, "apiKey", KEY) == sent, "%v: not every request carries the key", mode)
+
+		shown := make([dynamic]string)
+		defer delete(shown)
+		append(&shown, err.message, result.note)
+		for f in result.findings {
+			append(&shown, f.message, f.excerpt, f.suggestion, f.rule)
+		}
+		for text in shown {
+			testing.expectf(t, !strings.contains(text, KEY) && !strings.contains(text, "apiKey"), "%v: the key shows in %q", mode, text)
+			testing.expectf(t, !strings.contains(text, USER), "%v: the account shows in %q", mode, text)
+		}
+	}
+}
+
 // A timeout that libcurl refuses is an error, not a request without a
 // timeout: nothing is sent.
 @(test)

@@ -743,3 +743,52 @@ backend_none_says_languagetool_is_off :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(n.out, `"note": "language: en",`))
 }
 
+// The second of long.md's three chunks fails: the run exits 1, the report
+// names the failed chunk and the note says so, and the other chunks' findings
+// are in the report, fewer only by the failed chunk's own.
+@(test)
+a_failed_chunk_is_exit_1_and_the_others_are_checked :: proc(t: ^testing.T) {
+	path := CORPUS + "long.md"
+	// Retries pause 10 ms instead of 2 s.
+	timing := prose.Lt_Timing{request_s = 30, probe_s = 12, retries = 2, retry_pause_ms = 10}
+
+	full_fake, full_port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, full_fake)
+	fake, port := fake_lt_start(RECORDINGS, .Fail_Second_Chunk)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil && full_fake != nil) {
+		return
+	}
+	full_url := fmt.aprintf("http://127.0.0.1:%d", full_port)
+	defer delete(full_url)
+	url := fmt.aprintf("http://127.0.0.1:%d", port)
+	defer delete(url)
+
+	full := cli({path}, prose.Run_Env{lt = {server = full_url}, skill_dir = SKILL, lt_timing = timing})
+	defer cli_done(&full)
+	c := cli({path}, prose.Run_Env{lt = {server = url}, skill_dir = SKILL, lt_timing = timing})
+	defer cli_done(&c)
+
+	testing.expect_value(t, c.code, 1)
+	testing.expect_value(t, c.err, "")
+	testing.expectf(t, strings.contains(c.out, "LT-CHUNK-FAILED"), "%s", c.out)
+	testing.expectf(t, strings.contains(c.out, "chunk failed: HTTP 500"), "%s", c.out)
+	testing.expectf(t, strings.contains(c.out, " were never checked: HTTP 500."), "%s", c.out)
+	// The probe, three chunks, and two retries of the second.
+	testing.expect_value(t, fake_lt_requests(fake), 6)
+
+	lt_findings :: proc(report: string) -> int {
+		n := 0
+		rest := report
+		for line in strings.split_lines_iterator(&rest) {
+			if strings.contains(line, "  LT:") {
+				n += 1
+			}
+		}
+		return n
+	}
+	all, kept := lt_findings(full.out), lt_findings(c.out)
+	testing.expectf(t, kept > 0 && kept < all, "%d LanguageTool findings with a failed chunk, %d without", kept, all)
+	testing.expect(t, !strings.contains(full.out, "LT-CHUNK-FAILED"))
+}
+
