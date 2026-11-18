@@ -8,6 +8,7 @@ import "core:strconv"
 import "core:strings"
 import "core:testing"
 import "core:time"
+import curl "vendor:curl"
 import prose "../src"
 
 // The LanguageTool pass, against the fake server replaying the answers that
@@ -795,6 +796,21 @@ post_form_stops_when_libcurl_refuses_an_option :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(herr.message, "TIMEOUT"), "error %q", herr.message)
 	testing.expect_value(t, herr.retryable, false)
 	testing.expect_value(t, fake_lt_requests(fake), 0)
+}
+
+// A libcurl built without proxy support refuses CURLOPT_NOPROXY, and has no
+// proxy to bypass, so that refusal is not an error. Every other refusal is.
+@(test)
+a_refused_noproxy_does_not_stop_the_request_but_any_other_option_does :: proc(t: ^testing.T) {
+	for code in ([]curl.code{.E_UNKNOWN_OPTION, .E_NOT_BUILT_IN, .E_BAD_FUNCTION_ARGUMENT}) {
+		testing.expectf(t, !prose.setopt_is_fatal("NOPROXY", code), "NOPROXY %v stops the request", code)
+		for name in ([]string{"TIMEOUT", "URL", "PROXY", "NOSIGNAL", "WRITEFUNCTION"}) {
+			testing.expectf(t, prose.setopt_is_fatal(name, code), "%s %v does not stop the request", name, code)
+		}
+	}
+	for name in ([]string{"NOPROXY", "TIMEOUT", "PROXY"}) {
+		testing.expectf(t, !prose.setopt_is_fatal(name, .E_OK), "%s ok stops the request", name)
+	}
 }
 
 // Loopback does not go through a proxy unless the user's no_proxy says so:

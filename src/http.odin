@@ -146,7 +146,8 @@ form_encode :: proc(fields: [][2]string, allocator := context.allocator) -> stri
 //
 // Every option is checked: one that libcurl refuses stops the request before
 // it is sent, with an error naming the option, because a timeout or a
-// protocol limit that silently vanished is worse than no request.
+// protocol limit that silently vanished is worse than no request. The one
+// exception is NOPROXY, an optimization: see `setopt_is_fatal`.
 //
 // On an error `status` is 0 and `body` empty. `body` and `err.message` are
 // allocated with `allocator`; the caller frees them with `delete`. The
@@ -251,9 +252,17 @@ Options :: struct {
 
 @(private = "file")
 option :: proc(o: ^Options, code: curl.code, name: string) {
-	if o.failed == "" && code != .E_OK {
+	if o.failed == "" && setopt_is_fatal(name, code) {
 		o.failed, o.code = name, code
 	}
+}
+
+// setopt_is_fatal tells whether libcurl's answer `code` to the option `name`
+// stops the request. Any refusal does, except one of NOPROXY, which only
+// saves a loopback request a trip through a proxy: a libcurl built without
+// proxy support answers CURLE_UNKNOWN_OPTION, and has no proxy to bypass.
+setopt_is_fatal :: proc(name: string, code: curl.code) -> bool {
+	return code != .E_OK && name != "NOPROXY"
 }
 
 // is_transient reports whether a failed transfer may succeed when tried
