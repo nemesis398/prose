@@ -1,5 +1,6 @@
 package prose_tests
 
+import "core:os"
 import "core:testing"
 import "core:time"
 import "core:unicode/utf8"
@@ -56,5 +57,39 @@ run_hunspell_does_nothing_on_windows :: proc(t: ^testing.T) {
 		testing.expect_value(t, len(found), 0)
 	} else {
 		testing.expect_value(t, len(found), 1)
+	}
+}
+
+// The two tests above pass on Windows with or without the guard: an sh stub
+// cannot start there, so it gives no findings either way. This one starts a
+// `.cmd` stub that writes a marker file when it runs, so a marker proves that
+// hunspell was started. It runs on Windows only and could not be run when it
+// was written; the cross-compile checks that it builds.
+@(test)
+windows_never_starts_hunspell :: proc(t: ^testing.T) {
+	MARKER :: #directory + "stub/hunspell-marker.started"
+	_ = os.remove(MARKER) // a leftover of an earlier run
+	defer os.remove(MARKER)
+	when ODIN_OS == .Windows {
+		CMD :: #directory + "stub/hunspell-marker.cmd"
+
+		r, err := prose.check_text(TEXT, {lang = "en", use_lt = true, hunspell_command = CMD})
+		defer prose.file_result_destroy(&r)
+		testing.expect_value(t, err.message, "")
+		testing.expect_value(t, count_rule(r.findings, "HUNSPELL"), 0)
+
+		src := utf8.string_to_runes(TEXT)
+		defer delete(src)
+		m := prose.mask_markdown(src)
+		defer prose.masked_destroy(&m)
+		blocks := prose.language_blocks(&m, "en")
+		defer delete(blocks)
+		starts := prose.line_index(src)
+		defer delete(starts)
+		found := prose.run_hunspell_with(CMD, 20 * time.Second, src, &m, blocks, starts, nil)
+		defer prose.findings_destroy(found[:])
+		testing.expect_value(t, len(found), 0)
+
+		testing.expect(t, !os.exists(MARKER), "hunspell was started")
 	}
 }
