@@ -1,5 +1,6 @@
 package prose
 
+import "base:runtime"
 import "core:slice"
 import "core:strings"
 
@@ -140,12 +141,15 @@ Link_Frame :: struct {
 	next: u8,
 }
 
-// Scratch for the link target's backtracking search.
+// Scratch for the link target's backtracking search. `seen` is 8 bytes per
+// rune, so it is allocated by the first link target and not before.
 @(private = "file")
 Scan_State :: struct {
-	stack: [dynamic]Link_Frame,
-	seen:  []int,
-	stamp: int,
+	stack:     [dynamic]Link_Frame,
+	seen:      []int,
+	stamp:     int,
+	size:      int,
+	allocator: runtime.Allocator,
 }
 
 // mask_markdown masks `src`. The result borrows `src`, which must outlive
@@ -163,11 +167,12 @@ mask_markdown :: proc(src: []rune, allocator := context.allocator) -> Masked {
 	matches := make([dynamic]Match, allocator)
 	defer delete(matches)
 	st := Scan_State {
-		stack = make([dynamic]Link_Frame, allocator),
-		seen  = make([]int, n + 1, allocator),
+		stack     = make([dynamic]Link_Frame, allocator),
+		size      = n + 1,
+		allocator = allocator,
 	}
 	defer delete(st.stack)
-	defer delete(st.seen, allocator)
+	defer delete(st.seen, allocator) // nil when the text has no link target
 
 	for pat in Pattern {
 		p := 0
@@ -586,6 +591,9 @@ scan_linktarget :: proc(src: []rune, p: int, st: ^Scan_State) -> (int, bool) {
 	n := len(src)
 	if src[p] != ']' || p + 1 >= n || src[p + 1] != '(' || (p > 0 && src[p - 1] == '\\') {
 		return 0, false
+	}
+	if st.seen == nil {
+		st.seen = make([]int, st.size, st.allocator)
 	}
 	st.stamp += 1
 	clear(&st.stack)

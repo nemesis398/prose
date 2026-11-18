@@ -1,6 +1,7 @@
 package prose_tests
 
 import "core:encoding/json"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -412,4 +413,40 @@ py_classes_follow_python :: proc(t: ^testing.T) {
 	testing.expect(t, !prose.is_py_decimal(0x11DE0)) // newer than Python's Unicode 16
 	testing.expect(t, prose.is_py_space(0x1C))
 	testing.expect(t, !prose.is_py_space(0x200B))
+}
+
+// The link target's search scratch is 8 bytes per rune, so it is allocated on
+// the first link and not for every call.
+@(test)
+mask_allocates_the_link_scratch_only_for_a_link :: proc(t: ^testing.T) {
+	n := 10000
+	plain := make([]rune, n)
+	defer delete(plain)
+	for i in 0 ..< n {
+		plain[i] = 'a'
+	}
+	linked := make([]rune, n)
+	defer delete(linked)
+	copy(linked, plain)
+	for r, i in ([]rune{'[', 'x', ']', '(', 'y', ')'}) {
+		linked[i] = r
+	}
+
+	track: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&track, context.allocator)
+	defer mem.tracking_allocator_destroy(&track)
+	a := mem.tracking_allocator(&track)
+
+	m := prose.mask_markdown(plain, a)
+	prose.masked_destroy(&m)
+	without := int(track.total_memory_allocated)
+	// Two bool arrays (2n), the text of the one segment (n) and a little
+	// bookkeeping, but not the 8n of scratch.
+	testing.expectf(t, without < 8 * n, "a text with no link allocated %d bytes for %d runes", without, n)
+
+	m = prose.mask_markdown(linked, a)
+	prose.masked_destroy(&m)
+	with := int(track.total_memory_allocated) - without
+	testing.expectf(t, with >= 8 * n, "a text with a link allocated only %d bytes", with)
+	testing.expect_value(t, len(track.allocation_map), 0)
 }
