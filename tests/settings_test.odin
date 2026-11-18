@@ -679,6 +679,26 @@ command_output_reports_success_failure_and_absence :: proc(t: ^testing.T) {
 	testing.expect(t, time.tick_since(start) < 2 * time.Second)
 }
 
+// A child that writes far more than a pipe holds (64 KiB) used to block on
+// its write while `command_output` waited for it to exit, until the timeout
+// killed it. The output is read while waiting now, and the cap applies.
+@(test)
+command_output_keeps_the_first_64_kib_of_a_bigger_output :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	start := time.tick_now()
+	out, ok := prose.command_output({"sh", "-c", "head -c 204800 /dev/zero | tr '\\0' x"}, 10 * time.Second, true)
+	defer delete(out)
+	testing.expect(t, ok)
+	testing.expect_value(t, len(out), 64 << 10)
+	testing.expectf(t, time.tick_since(start) < 5 * time.Second, "took %v", time.tick_since(start))
+	if len(out) > 0 {
+		testing.expect_value(t, out[0], 'x')
+		testing.expect_value(t, out[len(out) - 1], 'x')
+	}
+}
+
 // ---------------------------------------------------------------------------
 // The config directory.
 

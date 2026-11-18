@@ -13,9 +13,18 @@ MAX_COMMAND_OUTPUT :: 64 << 10
 // `timeout`. A command that is missing, fails to start, exits non-zero, or is
 // still running when the time is up (it is then killed) gives `ok == false`.
 // stdin is empty and stderr is dropped, as it may name the item. With
-// `capture`, `out` is what the command printed to stdout, up to 64 KiB, read
-// without waiting for a grandchild that still holds the pipe; the caller
-// deletes it. Without, `out` is nil.
+// `capture`, `out` is what the command printed to stdout, the first 64 KiB of
+// it, read without waiting for a grandchild that still holds the pipe; the
+// caller deletes it. Without, `out` is nil.
+//
+// The output is read while the command runs, not after it has exited: a
+// command that prints more than a pipe holds blocks on its write until
+// someone reads, and would never exit. What is past the cap is read and
+// dropped, so that such a command still finishes.
+//
+// Only the process is killed on a timeout, not its process group, and a
+// grandchild outlives it. That is deliberate: `rbw` starts `rbw-agent` as
+// its own child, and the agent must survive a lookup that ran out of time.
 command_output :: proc(
 	command: []string,
 	timeout: time.Duration,
@@ -47,33 +56,63 @@ command_output :: proc(
 	if serr != nil {
 		return nil, false
 	}
-	state, werr := os.process_wait(proc_, timeout)
-	if werr != nil {
-		if werr == .Timeout {
-			_ = os.process_kill(proc_)
-			_, _ = os.process_wait(proc_, time.Second)
-		}
-		return nil, false
+	kill :: proc(proc_: os.Process) {
+		_ = os.process_kill(proc_)
+		_, _ = os.process_wait(proc_, time.Second)
 	}
-	if !state.exited || state.exit_code != 0 {
-		return nil, false
-	}
+
 	if !capture {
-		return nil, true
+		state, werr := os.process_wait(proc_, timeout)
+		if werr != nil {
+			if werr == .Timeout {
+				kill(proc_)
+			}
+			return nil, false
+		}
+		return nil, state.exited && state.exit_code == 0
 	}
 
 	buf: [dynamic]byte
 	chunk: [4096]byte
-	for len(buf) < MAX_COMMAND_OUTPUT {
-		has, perr := os.pipe_has_data(r)
-		if !has || perr != nil {
+	deadline := time.time_add(time.now(), timeout)
+	state: os.Process_State
+	exited := false
+	for {
+		// What is in the pipe now. Looked at before the process, and once more
+		// after it is seen to have exited: what it wrote before exiting is in
+		// the pipe by then.
+		for {
+			has, perr := os.pipe_has_data(r)
+			if !has || perr != nil {
+				break
+			}
+			n, rerr := os.read(r, chunk[:])
+			if n > 0 {
+				room := MAX_COMMAND_OUTPUT - len(buf)
+				append(&buf, ..chunk[:min(n, max(room, 0))])
+			}
+			if n <= 0 || rerr != nil {
+				break
+			}
+		}
+		if exited {
 			break
 		}
-		n, rerr := os.read(r, chunk[:])
-		append(&buf, ..chunk[:n])
-		if n == 0 || rerr != nil {
-			break
+		st, werr := os.process_wait(proc_, 0)
+		if werr == nil && st.exited {
+			state, exited = st, true
+			continue
 		}
+		if time.diff(time.now(), deadline) <= 0 {
+			kill(proc_)
+			delete(buf)
+			return nil, false
+		}
+		time.sleep(time.Millisecond)
+	}
+	if state.exit_code != 0 {
+		delete(buf)
+		return nil, false
 	}
 	return buf[:], true
 }
