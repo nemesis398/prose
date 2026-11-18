@@ -8,8 +8,10 @@
 #   the rest  correct: `*`
 #
 # OFFSET counts characters from the start of the line as sent, an escaping
-# `^` included, as the real hunspell counts it. A word is a run of letters
-# and apostrophes. A line that starts with one of the characters the real
+# `^` included. The real hunspell counts bytes, so the two differ on a line
+# with a non-ASCII letter before the word; the checker reads no offset, and
+# the stub only has to put one there. A word is a run of letters and
+# apostrophes. A line that starts with one of the characters the real
 # hunspell takes as a command (and not with `^`) gets no answer at all, not
 # even the blank line, which is why the checker escapes every line with `^`.
 # Arguments are ignored.

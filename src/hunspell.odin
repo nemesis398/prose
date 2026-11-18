@@ -15,7 +15,10 @@ import "core:unicode/utf8"
 // suggestion.
 
 // How long hunspell may take for a whole text; a large file is a few
-// seconds, so this only catches a hung process.
+// seconds, so this only catches a hung process. It is 60 s on purpose, where
+// the reference allowed 30: the pass is all or nothing (a run that is cut off
+// gives no findings at all, not the ones found so far), so a slow machine
+// with a big file gets the longer time rather than a silent miss.
 HUNSPELL_TIMEOUT :: 60 * time.Second
 
 // The most hunspell's answer may hold. It prints about 100 bytes for each
@@ -66,9 +69,9 @@ hunspell_program :: proc() -> string {
 //
 // On Windows the pass does nothing and starts no process, so backend `none`
 // checks no spelling there. `command_with_input` cannot bound the run on
-// Windows when hunspell is a wrapper whose own child holds the pipe: the
-// writer thread then blocks in a write that nothing ends, and the checker
-// would hang with it.
+// Windows when hunspell is a wrapper whose own child holds the pipe and the
+// text is bigger than the pipe buffer: the writer thread then blocks in a
+// write that nothing ends, and the checker would hang with it.
 run_hunspell_with :: proc(
 	command: string,
 	timeout: time.Duration,

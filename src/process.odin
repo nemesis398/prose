@@ -169,11 +169,14 @@ feed_stdin :: proc(t: ^thread.Thread) {
 // returns. That last is what bounds the run when the command is a wrapper
 // whose own child holds the pipes: killing the wrapper breaks nothing.
 //
-// On POSIX only. On Windows the writer blocks in its write and never sees
-// the order to stop, so for such a wrapper this procedure waits in the
-// join for as long as the wrapper's child lives, whatever `timeout` says.
-// The timeout bounds the run there only for a command that holds its pipes
-// itself. That is why the hunspell pass does not run on Windows.
+// The bound holds on POSIX. On Windows a write waits for room and the
+// writer never sees the order to stop. That matters only when the input is
+// bigger than the pipe buffer: a smaller one goes in at once and the writer
+// is done. With a bigger one and a wrapper whose own child holds the pipe,
+// this procedure waits in the join for as long as the wrapper's child lives,
+// whatever `timeout` says; the timeout bounds the run there only for a
+// command that holds its pipes itself. That is why the hunspell pass does
+// not run on Windows.
 command_with_input :: proc(
 	command: []string,
 	input: []byte,
