@@ -259,6 +259,49 @@ emoji_clusters_keep_the_references_quirks :: proc(t: ^testing.T) {
 	}
 }
 
+// Skin-tone modifiers and keycaps are not joined by the reference, and the
+// port reproduces it: a modifier (U+1F3FB..U+1F3FF) is in the emoji range, so
+// it is an emoji of its own unless a zero-width joiner leads into it, and a
+// keycap starts with a digit or "#", which no emoji range holds, so the
+// variation selector and the keycap mark after it have no emoji to join. This
+// pins the offsets of that behavior; a change that follows Unicode here
+// changes the findings for such emoji and needs a reason of its own.
+@(test)
+emoji_clusters_split_skin_tones_and_skip_keycaps_as_the_reference_does :: proc(t: ^testing.T) {
+	src := runes("a 👍🏽 b")
+	defer delete(src)
+	got := prose.emoji_clusters(src)
+	defer prose.emoji_destroy(got)
+	testing.expect_value(t, len(got), 2)
+	if len(got) == 2 {
+		testing.expect_value(t, got[0].offset, 2)
+		testing.expect_value(t, got[0].cluster, "👍")
+		testing.expect_value(t, got[1].offset, 3)
+		testing.expect_value(t, got[1].cluster, "🏽")
+	}
+
+	// Keycaps: digit or "#", U+FE0F, U+20E3. No emoji is found in any of them.
+	caps := runes("1\uFE0F\u20E3 #\uFE0F\u20E3 *\uFE0F\u20E3")
+	defer delete(caps)
+	none := prose.emoji_clusters(caps)
+	defer prose.emoji_destroy(none)
+	testing.expect_value(t, len(none), 0)
+
+	// A woman, a skin tone, a joiner and a laptop: the joiner pulls the laptop
+	// into the cluster that starts at the modifier, which the woman is not part of.
+	tone := runes("👩🏽\u200D💻 x")
+	defer delete(tone)
+	joined := prose.emoji_clusters(tone)
+	defer prose.emoji_destroy(joined)
+	testing.expect_value(t, len(joined), 2)
+	if len(joined) == 2 {
+		testing.expect_value(t, joined[0].offset, 0)
+		testing.expect_value(t, joined[0].cluster, "👩")
+		testing.expect_value(t, joined[1].offset, 1)
+		testing.expect_value(t, joined[1].cluster, "🏽\u200D💻")
+	}
+}
+
 @(test)
 arrows_are_not_emoji :: proc(t: ^testing.T) {
 	src := runes("a → b ← c ↔ d ⇒ e")
