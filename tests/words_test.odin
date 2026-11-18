@@ -148,8 +148,9 @@ a_byte_order_mark_and_a_huge_line_do_no_harm :: proc(t: ^testing.T) {
 the_shipped_dictionary_file_adds_no_word :: proc(t: ^testing.T) {
 	cfg, unused := dirs(t)
 	defer dirs_done(cfg, unused)
-	skill := "skills/prose"
-	testing.expect(t, os.is_file("skills/prose/dictionary.txt"))
+	// Found from this file, not from the working directory the tests run in.
+	skill := #directory + "../skills/prose"
+	testing.expect(t, os.is_file(#directory + "../skills/prose/dictionary.txt"))
 	ws := prose.load_words_in({}, cfg, skill)
 	defer prose.word_set_destroy(&ws)
 	testing.expect_value(t, len(ws), 19)
