@@ -454,6 +454,69 @@ without_a_file_the_variables_count_as_a_choice :: proc(t: ^testing.T) {
 	}
 }
 
+// The precedence table of the design: the file's backend wins, and the
+// variables only fill in its values, or, with no backend in the file, choose
+// it only when they are complete. These rows were untested.
+
+// premium in the file, a server in the environment: still premium. The
+// server variable is no part of that backend.
+@(test)
+premium_in_the_file_ignores_a_server_in_the_environment :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "file-user",
+	}
+	b, problem := choose(t, s, {server = "https://env.example.org", api_key = "ENV-KEY"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.Premium)
+	testing.expect_value(t, b.url, "https://api.languagetoolplus.com")
+	testing.expect_value(t, b.username, "file-user")
+	testing.expect_value(t, b.key, "ENV-KEY")
+	testing.expect_value(t, b.label, "premium cloud")
+}
+
+// server in the file, a key and an account in the environment: still the
+// server, whose text stays on it; a self-hosted server gets neither.
+@(test)
+server_in_the_file_ignores_a_key_and_an_account_in_the_environment :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		backend = prose.Backend_Kind.Server,
+		server  = "https://file.example.org",
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY", username = "env-user"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.Server)
+	testing.expect_value(t, b.url, "https://file.example.org")
+	testing.expect_value(t, b.username, "")
+	testing.expect_value(t, b.key, "")
+	testing.expect_value(t, b.label, "self-hosted")
+}
+
+// No backend in the file: a key in the environment and an account in the
+// file are not "the variables together", so there is no choice. The file's
+// other values do not choose a backend either.
+@(test)
+without_a_backend_a_key_in_the_environment_and_an_account_in_the_file_choose_nothing :: proc(t: ^testing.T) {
+	s := prose.Settings {
+		username = "file-user",
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+	testing.expect(t, b.url == "" && b.key == "" && b.username == "")
+	kind, from := prose.backend_kind(s, {api_key = "ENV-KEY"})
+	testing.expect_value(t, kind, prose.Backend_Kind.None)
+	testing.expect_value(t, from, "the default")
+	// With the account in the environment as well, it is premium.
+	b2, problem2 := choose(t, s, {api_key = "ENV-KEY", username = "env-user"}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, b2.kind, prose.Backend_Kind.Premium)
+	testing.expect_value(t, b2.username, "env-user")
+}
+
 @(test)
 a_server_variable_beats_the_files_server :: proc(t: ^testing.T) {
 	s := prose.Settings {
