@@ -125,6 +125,22 @@ find_unkeepable_number :: proc(text: string) -> (number: string, offset: int, fo
 	}
 }
 
+// find_wide_integer looks in a JSON text, which has parsed already, for an
+// integer beyond 64 bits. The parser reads it as some other number without a
+// word, so an answer from a server is checked before it is believed.
+find_wide_integer :: proc(text: string) -> (number: string, offset: int, found: bool) {
+	t := json.make_tokenizer(text, .JSON, true)
+	for {
+		tok, err := json.get_token(&t)
+		if err != .None || tok.kind == .EOF {
+			return
+		}
+		if tok.kind == .Integer && !fits_i64(tok.text) {
+			return tok.text, tok.offset, true
+		}
+	}
+}
+
 // fits_i64 tells whether the integer literal `digits` (an optional minus,
 // then digits) is within 64 bits. strconv.parse_i64 does not say: it
 // returns some number for 123456789012345678901234567890.
@@ -646,7 +662,17 @@ temp_file_pid :: proc(name: string) -> (pid: int, ok: bool) {
 	if !all_digits(pid_text) || !all_digits(count_text) {
 		return 0, false
 	}
-	return strconv.parse_int(pid_text, 10)
+	// An id is at most 32 bits and ten digits. strconv.parse_int does not
+	// refuse a longer number, it wraps it into some other one, which could
+	// name a live process or a dead one at will.
+	if len(pid_text) > 10 {
+		return 0, false
+	}
+	n, parsed := strconv.parse_int(pid_text, 10)
+	if !parsed || n > int(max(u32)) {
+		return 0, false
+	}
+	return n, true
 }
 
 @(private = "file")

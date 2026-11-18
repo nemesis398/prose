@@ -588,6 +588,10 @@ lt_post :: proc(
 				json.destroy_value(v, allocator)
 				return nil, strings.clone("the answer is not a JSON object", allocator), .Bad_Answer
 			}
+			if _, _, wide := find_wide_integer(string(body)); wide {
+				json.destroy_value(v, allocator)
+				return nil, strings.clone("the answer holds an integer beyond 64 bits", allocator), .Bad_Answer
+			}
 			return v, "", .None
 		}
 		if !retry || attempt >= timing.retries {

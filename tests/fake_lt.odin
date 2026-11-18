@@ -86,6 +86,10 @@ Fake_Mode :: enum {
 	// Replay for the probe, then 200 and `{"status":"ok"}` for every check
 	// request (one with a `data` field).
 	No_Matches_After_Probe,
+	// Replay for the probe, then for every check request (one with a `data`
+	// field) 200 and one match whose `offset` is an integer of 20 digits,
+	// which a parser that wraps it reads as 0.
+	Wide_Number_After_Probe,
 	// A self-hosted open-source server: the probe gets `software.premium`
 	// false and one match, every check request `{"matches":[]}`.
 	Probe_Free,
@@ -391,6 +395,14 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 	case .No_Matches_After_Probe:
 		if "data" in form {
 			send_response(client, 200, "application/json", `{"status":"ok"}`)
+			return
+		}
+	case .Wide_Number_After_Probe:
+		if "data" in form {
+			send_response(
+				client, 200, "application/json",
+				`{"matches":[{"offset":18446744073709551616,"length":3,"message":"m","rule":{"id":"X","issueType":"grammar"},"context":{"text":"The","offset":0,"length":3},"replacements":[]}]}`,
+			)
 			return
 		}
 	case .Probe_Free, .Probe_Premium_Hint:

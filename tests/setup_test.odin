@@ -387,6 +387,47 @@ a_failed_first_write_leaves_no_file :: proc(t: ^testing.T) {
 	}
 }
 
+// The id in a leftover's name is read from a directory a user may fill: a
+// number too wide for a process id is no id, and must not wrap into one.
+@(test)
+a_leftover_named_with_a_too_wide_process_id_is_not_ours :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	dir := scratch(t)
+	defer scratch_done(dir)
+	child, cerr := os.process_start(os.Process_Desc{command = {"true"}})
+	if cerr != nil {
+		return
+	}
+	_, _ = os.process_wait(child)
+	dead := u128(child.pid)
+	// Each of these is `dead` once wrapped to 64 bits or to 32.
+	wide := [?]string {
+		fmt.tprintf(".config.json.%d.0.tmp", (u128(1) << 64) + dead),
+		fmt.tprintf(".config.json.%d.0.tmp", (u128(1) << 32) + dead),
+		fmt.tprintf(".config.json.%d.0.tmp", (u128(1) << 63) + dead),
+		fmt.tprintf(".config.json.0000000000000%d.0.tmp", dead),
+	}
+	plain := fmt.tprintf(".config.json.%d.1.tmp", dead)
+	for name in wide {
+		f := join(dir, name)
+		defer delete(f)
+		put(t, f, "not ours")
+	}
+	f := join(dir, plain)
+	defer delete(f)
+	put(t, f, "half a write")
+
+	c := values(dir, `{"languageRule": "R"}`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 0)
+	testing.expectf(t, !exists_in(dir, plain), "%s was not swept", plain)
+	for name in wide {
+		testing.expectf(t, exists_in(dir, name), "%s was swept", name)
+	}
+}
+
 // Leftovers of a crashed write, `.config.json.<pid>.<n>.tmp`, are swept when
 // the process that left them is gone. POSIX only; Windows cannot tell.
 @(test)

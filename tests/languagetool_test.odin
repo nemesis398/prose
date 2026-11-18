@@ -402,6 +402,40 @@ a_chunk_answer_without_matches_is_a_failed_chunk :: proc(t: ^testing.T) {
 	testing.expectf(t, failed > 0, "no LT-CHUNK-FAILED finding")
 }
 
+// An integer beyond 64 bits in an answer is not read as some other number: a
+// parser wraps 18446744073709551616 to 0, which would put a finding at the
+// start of the chunk. The chunk fails instead, and is not retried.
+@(test)
+an_answer_with_a_number_beyond_64_bits_is_a_failed_chunk :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Wide_Number_After_Probe)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	backend := server_backend(port)
+	defer delete(backend.url)
+	md := read_corpus("fixture.md")
+	defer delete(md)
+	timing := prose.LT_TIMING
+	timing.retry_pause_ms = 10
+	result, err := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	testing.expect_value(t, err.message, "")
+	testing.expectf(t, strings.contains(result.note, " | chunk failed: the answer holds an integer beyond 64 bits"), "note %q", result.note)
+	failed, from_server := 0, 0
+	for f in result.findings {
+		if f.rule == "LT-CHUNK-FAILED" {
+			failed += 1
+		}
+		if f.rule == "LT:X" {
+			from_server += 1
+		}
+	}
+	testing.expectf(t, failed > 0, "no LT-CHUNK-FAILED finding")
+	testing.expect_value(t, from_server, 0)
+}
+
 // A backend that never answers: the probe gives up after its timeout, is
 // retried as the reference retries, and the check stops naming the backend.
 @(test)
