@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:io"
 import "core:os"
 import "core:strings"
+import "core:sync"
 import "core:testing"
 import prose "../src"
 
@@ -857,4 +858,44 @@ stdout_is_flushed_before_the_error_on_exit_2 :: proc(t: ^testing.T) {
 	}
 	testing.expectf(t, first_err >= 0, "nothing reached stderr: %v", log)
 	testing.expectf(t, first_out >= 0 && first_out < first_err, "stderr came before the report reached stdout: %v", log)
+}
+
+// How often the counting stand-in for rbw was asked.
+@(private = "file")
+rbw_calls: int
+
+@(private = "file")
+counting_rbw :: proc(item: string) -> (string, bool) {
+	sync.atomic_add(&rbw_calls, 1)
+	if item == "lt key" {
+		return "KEY-FROM-RBW", true
+	}
+	return "", false
+}
+
+// --selftest on a Premium setup that is refused (no account) looks the key up
+// once, not once to choose the backend and again to describe the key.
+@(test)
+selftest_asks_rbw_once_when_premium_is_refused :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	delete(put(t, dir, "config.json", transmute([]byte)string(`{"languagetool": {"backend": "premium", "keyItem": "lt key"}}`)))
+	before := sync.atomic_load(&rbw_calls)
+	c := cli({"--selftest"}, {config_dir = dir, rbw = counting_rbw})
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	testing.expect_value(t, sync.atomic_load(&rbw_calls) - before, 1)
+	testing.expectf(t, strings.contains(c.out, "  api key       : set, 12 chars, from the rbw item \"lt key\"\n"), "%s", c.out)
+	testing.expectf(t, strings.contains(c.out, "needs the account"), "%s", c.out)
+	testing.expect(t, !strings.contains(c.out, "KEY-FROM-RBW"))
+
+	// No key anywhere: still one lookup, and the problem names the sources.
+	delete(put(t, dir, "config.json", transmute([]byte)string(`{"languagetool": {"backend": "premium", "username": "u", "keyItem": "other"}}`)))
+	before = sync.atomic_load(&rbw_calls)
+	n := cli({"--selftest"}, {config_dir = dir, rbw = counting_rbw})
+	defer cli_done(&n)
+	testing.expect_value(t, n.code, 2)
+	testing.expect_value(t, sync.atomic_load(&rbw_calls) - before, 1)
+	testing.expectf(t, strings.contains(n.out, "LanguageTool Premium has no key"), "%s", n.out)
+	free_all(context.temp_allocator)
 }
