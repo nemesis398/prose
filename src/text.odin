@@ -46,7 +46,8 @@ is_py_space :: proc(r: rune) -> bool {
 // excerpt_at returns a one-line excerpt around `offset`: `width` code points
 // before it and `length` plus `width` after it, never across a line break,
 // stripped of white space, and with an ellipsis (U+2026) on each side where
-// it was cut. The result is UTF-8 in a new string the caller frees.
+// it was cut. The result is UTF-8 in a new string the caller frees. If the
+// allocator fails the excerpt is "" rather than a cut one.
 excerpt_at :: proc(
 	src: []rune,
 	offset: int,
@@ -79,13 +80,19 @@ excerpt_at :: proc(
 		body = body[:len(body) - 1]
 	}
 	text := runes_to_string(body, allocator)
+	if text == "" && len(body) > 0 {
+		return ""
+	}
 	pre := "\u2026" if lo > line_lo else ""
 	post := "\u2026" if hi < line_hi else ""
 	if pre == "" && post == "" {
 		return text
 	}
 	defer delete(text, allocator)
-	out, _ := strings.concatenate({pre, text, post}, allocator)
+	out, err := strings.concatenate({pre, text, post}, allocator)
+	if err != nil {
+		return ""
+	}
 	return out
 }
 

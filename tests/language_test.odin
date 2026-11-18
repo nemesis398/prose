@@ -205,6 +205,10 @@ blocks_match_the_reference_on_the_corpus :: proc(t: ^testing.T) {
 		defer delete(blocks)
 
 		doc, _ := value.(json.Object)
+		length := int(doc["length"].(json.Integer) or_else -1)
+		if !testing.expectf(t, length == len(src), "%s: length %d, reference %d", stem, len(src), length) {
+			continue
+		}
 		want, _ := doc["blocks"].(json.Array)
 		if !testing.expectf(t, len(want) == len(blocks), "%s: %d blocks, reference %d", stem, len(blocks), len(want)) {
 			continue
@@ -225,5 +229,7 @@ blocks_match_the_reference_on_the_corpus :: proc(t: ^testing.T) {
 			checked += 1
 		}
 	}
-	testing.expectf(t, checked >= 10, "only %d corpus files matched", checked)
+	corpus := corpus_count(t)
+	testing.expectf(t, corpus >= 10, "only %d corpus files found", corpus)
+	testing.expectf(t, checked == corpus, "%d of %d corpus files matched", checked, corpus)
 }

@@ -1,6 +1,7 @@
 package prose_tests
 
 import "core:encoding/json"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -109,6 +110,57 @@ excerpt_never_crosses_a_line_and_handles_empty_input :: proc(t: ^testing.T) {
 	testing.expect_value(t, got4, "hi")
 }
 
+// A failing allocator is a result, not a crash: the excerpt is "" and nothing
+// leaks. `fail_from` is the number of allocations that succeed first.
+@(private = "file")
+Flaky :: struct {
+	inner:     mem.Allocator,
+	fail_from: int,
+	count:     int,
+}
+
+@(private = "file")
+flaky_proc :: proc(
+	data: rawptr,
+	mode: mem.Allocator_Mode,
+	size, alignment: int,
+	old_memory: rawptr,
+	old_size: int,
+	loc := #caller_location,
+) -> (
+	[]byte,
+	mem.Allocator_Error,
+) {
+	f := (^Flaky)(data)
+	if mode == .Alloc || mode == .Alloc_Non_Zeroed || mode == .Resize || mode == .Resize_Non_Zeroed {
+		f.count += 1
+		if f.count > f.fail_from {
+			return nil, .Out_Of_Memory
+		}
+	}
+	return f.inner.procedure(f.inner.data, mode, size, alignment, old_memory, old_size, loc)
+}
+
+@(test)
+excerpt_survives_a_failing_allocator :: proc(t: ^testing.T) {
+	long := strings.repeat("x", 100)
+	defer delete(long)
+	src := runes(long)
+	defer delete(src)
+	// 0: the text itself cannot be allocated. 1: the ellipses cannot be added.
+	for fail_from in 0 ..= 1 {
+		f := Flaky{inner = context.allocator, fail_from = fail_from}
+		got := prose.excerpt_at(src, 50, allocator = mem.Allocator{flaky_proc, &f})
+		testing.expectf(t, got == "", "fail_from %d: got %q, want an empty excerpt", fail_from, got)
+		delete(got)
+	}
+	// And with room enough it still works through the same allocator.
+	f := Flaky{inner = context.allocator, fail_from = 2}
+	got := prose.excerpt_at(src, 50, allocator = mem.Allocator{flaky_proc, &f})
+	defer delete(got)
+	testing.expect_value(t, len(got), 69 + 6)
+}
+
 @(test)
 excerpt_counts_code_points_not_bytes :: proc(t: ^testing.T) {
 	text := strings.repeat("ä", 40)
@@ -204,6 +256,49 @@ emoji_clusters_keep_the_references_quirks :: proc(t: ^testing.T) {
 		testing.expect_value(t, got[3].offset, 12)
 		testing.expect_value(t, got[4].offset, 15)
 		testing.expect_value(t, got[4].cluster, "😀‍")
+	}
+}
+
+// Skin-tone modifiers and keycaps are not joined by the reference, and the
+// port reproduces it: a modifier (U+1F3FB..U+1F3FF) is in the emoji range, so
+// it is an emoji of its own unless a zero-width joiner leads into it, and a
+// keycap starts with a digit or "#", which no emoji range holds, so the
+// variation selector and the keycap mark after it have no emoji to join. This
+// pins the offsets of that behavior; a change that follows Unicode here
+// changes the findings for such emoji and needs a reason of its own.
+@(test)
+emoji_clusters_split_skin_tones_and_skip_keycaps_as_the_reference_does :: proc(t: ^testing.T) {
+	src := runes("a 👍🏽 b")
+	defer delete(src)
+	got := prose.emoji_clusters(src)
+	defer prose.emoji_destroy(got)
+	testing.expect_value(t, len(got), 2)
+	if len(got) == 2 {
+		testing.expect_value(t, got[0].offset, 2)
+		testing.expect_value(t, got[0].cluster, "👍")
+		testing.expect_value(t, got[1].offset, 3)
+		testing.expect_value(t, got[1].cluster, "🏽")
+	}
+
+	// Keycaps: digit or "#", U+FE0F, U+20E3. No emoji is found in any of them.
+	caps := runes("1\uFE0F\u20E3 #\uFE0F\u20E3 *\uFE0F\u20E3")
+	defer delete(caps)
+	none := prose.emoji_clusters(caps)
+	defer prose.emoji_destroy(none)
+	testing.expect_value(t, len(none), 0)
+
+	// A woman, a skin tone, a joiner and a laptop: the joiner pulls the laptop
+	// into the cluster that starts at the modifier, which the woman is not part of.
+	tone := runes("👩🏽\u200D💻 x")
+	defer delete(tone)
+	joined := prose.emoji_clusters(tone)
+	defer prose.emoji_destroy(joined)
+	testing.expect_value(t, len(joined), 2)
+	if len(joined) == 2 {
+		testing.expect_value(t, joined[0].offset, 0)
+		testing.expect_value(t, joined[0].cluster, "👩")
+		testing.expect_value(t, joined[1].offset, 1)
+		testing.expect_value(t, joined[1].cluster, "🏽\u200D💻")
 	}
 }
 
@@ -348,6 +443,24 @@ write_json_several_results_and_findings :: proc(t: ^testing.T) {
 
 // The goldens are what the reference printed, so reading one, parsing it,
 // writing it back and getting the same bytes proves the writer.
+// corpus_count is the number of documents in tests/corpus. The oracle tests
+// check every one of them against its reference file and assert that count,
+// so a document that is skipped, or an oracle file that is missing, fails.
+corpus_count :: proc(t: ^testing.T) -> int {
+	dir := strings.concatenate({#directory, "corpus"})
+	defer delete(dir)
+	entries, err := os.read_all_directory_by_path(dir, context.allocator)
+	testing.expect_value(t, err, nil)
+	defer os.file_info_slice_delete(entries, context.allocator)
+	count := 0
+	for e in entries {
+		if strings.has_suffix(e.name, ".md") {
+			count += 1
+		}
+	}
+	return count
+}
+
 @(test)
 write_json_round_trips_every_golden_file :: proc(t: ^testing.T) {
 	dir := strings.concatenate({#directory, "golden"})
@@ -385,7 +498,9 @@ write_json_round_trips_every_golden_file :: proc(t: ^testing.T) {
 		testing.expectf(t, strings.to_string(sb) == string(data), "%s does not round-trip", e.name)
 		checked += 1
 	}
-	testing.expectf(t, checked >= 10, "only %d golden files found", checked)
+	corpus := corpus_count(t)
+	testing.expectf(t, corpus >= 10, "only %d corpus files found", corpus)
+	testing.expectf(t, checked == corpus, "%d golden files round-tripped, %d corpus files", checked, corpus)
 }
 
 @(private = "file")

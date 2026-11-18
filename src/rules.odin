@@ -957,9 +957,12 @@ rule_phrasing :: proc(r: ^Rules) {
 // Kelvin sign (which lowers to "k"). No other code point lowers to a
 // character of a phrase, so the rest are kept as they are. The result has
 // one code point per code point of `src`, so an offset in it is an offset in
-// the source. Python lowers the dotted capital I to two code points, which
-// shifted every later hit in the reference (a reference bug); here it lowers
-// to "i" alone. The caller frees the result with `delete`.
+// the source. Python lowers the dotted capital I to two code points ("i" and
+// a combining dot), which shifted every later hit in the reference (a
+// reference bug); here it lowers to "i" alone. That widens matching: the
+// reference never matched a phrase that starts with or contains U+0130 as its
+// "i", so "\u0130n conclusion" is flagged here and was not there. The caller
+// frees the result with `delete`.
 @(private = "file")
 py_lower :: proc(src: []rune, allocator := context.allocator) -> []rune {
 	out := make([dynamic]rune, 0, len(src), allocator)

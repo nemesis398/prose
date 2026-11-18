@@ -1,6 +1,8 @@
 package prose_tests
 
+import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 import "core:testing"
 import prose "../src"
@@ -315,4 +317,73 @@ a_phrase_after_a_dotted_capital_i_keeps_its_column :: proc(t: ^testing.T) {
 	testing.expect_value(t, f.col, 11)
 	testing.expect_value(t, f.message, "\u201cnahtlos\u201d reads as machine prose. Leere Verstärkung. Sag, was passiert.")
 	testing.expect_value(t, f.excerpt, text)
+}
+
+// Python's lower() turns the dotted capital I into "i" and a combining dot, so
+// the reference never matched "in conclusion" in "\u0130n conclusion". The
+// port lowers it to "i" alone and flags the phrase, in the right column.
+// Hand-written: the port is wider than the reference here, on purpose.
+@(test)
+a_phrase_that_starts_with_a_dotted_capital_i_is_flagged :: proc(t: ^testing.T) {
+	text := "Intro. \u0130n conclusion, it works."
+	result, err := prose.check_text(text, {lang = "en"})
+	defer prose.file_result_destroy(&result)
+	testing.expect_value(t, err.message, "")
+	hits := 0
+	for f in result.findings {
+		if f.rule != "AI-PHRASE" {
+			continue
+		}
+		hits += 1
+		testing.expect_value(t, f.line, 1)
+		testing.expect_value(t, f.col, 8)
+		testing.expect_value(t, f.message, "\u201c\u0130n conclusion\u201d reads as machine prose. A note does not need a conclusion section.")
+	}
+	testing.expect_value(t, hits, 1)
+}
+
+// Findings equal in line, column and rule keep the order they came in. Five
+// elements sort by insertion and cannot tell a stable sort from an unstable
+// one, so this has 400 findings in 3 keys, in an order a quicksort would
+// scramble, each carrying its arrival number.
+@(test)
+equal_findings_keep_their_arrival_order_in_a_long_list :: proc(t: ^testing.T) {
+	N :: 400
+	fs := make([]prose.Finding, N)
+	defer delete(fs)
+	messages := make([]string, N)
+	defer {
+		for m in messages {
+			delete(m)
+		}
+		delete(messages)
+	}
+	x := u32(12345)
+	for i in 0 ..< N {
+		x = x * 1664525 + 1013904223
+		key := int(x >> 24) % 3
+		messages[i] = fmt.aprintf("%d", i)
+		fs[i] = prose.Finding {
+			line    = 1,
+			col     = 1 + key,
+			rule    = "R",
+			message = messages[i],
+		}
+	}
+	prose.sort_findings(fs)
+	for i in 1 ..< N {
+		a, b := fs[i - 1], fs[i]
+		if a.col > b.col {
+			testing.expectf(t, false, "position %d: column %d before column %d", i, a.col, b.col)
+			return
+		}
+		if a.col == b.col {
+			an, _ := strconv.parse_int(a.message)
+			bn, _ := strconv.parse_int(b.message)
+			if an > bn {
+				testing.expectf(t, false, "position %d: arrival %d sorted before arrival %d", i, an, bn)
+				return
+			}
+		}
+	}
 }
