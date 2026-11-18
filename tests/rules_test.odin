@@ -316,3 +316,26 @@ a_phrase_after_a_dotted_capital_i_keeps_its_column :: proc(t: ^testing.T) {
 	testing.expect_value(t, f.message, "\u201cnahtlos\u201d reads as machine prose. Leere Verstärkung. Sag, was passiert.")
 	testing.expect_value(t, f.excerpt, text)
 }
+
+// Python's lower() turns the dotted capital I into "i" and a combining dot, so
+// the reference never matched "in conclusion" in "\u0130n conclusion". The
+// port lowers it to "i" alone and flags the phrase, in the right column.
+// Hand-written: the port is wider than the reference here, on purpose.
+@(test)
+a_phrase_that_starts_with_a_dotted_capital_i_is_flagged :: proc(t: ^testing.T) {
+	text := "Intro. \u0130n conclusion, it works."
+	result, err := prose.check_text(text, {lang = "en"})
+	defer prose.file_result_destroy(&result)
+	testing.expect_value(t, err.message, "")
+	hits := 0
+	for f in result.findings {
+		if f.rule != "AI-PHRASE" {
+			continue
+		}
+		hits += 1
+		testing.expect_value(t, f.line, 1)
+		testing.expect_value(t, f.col, 8)
+		testing.expect_value(t, f.message, "\u201c\u0130n conclusion\u201d reads as machine prose. A note does not need a conclusion section.")
+	}
+	testing.expect_value(t, hits, 1)
+}
