@@ -48,29 +48,68 @@ is_emoji_joiner :: proc(r: rune) -> bool {
 	return r == 0x200D || r == 0xFE0F || r == 0xFE0E || r == 0x20E3
 }
 
-// emoji_clusters returns every emoji in `src` with its code point offset. A
-// flag is two regional indicators; a family is several emoji joined by
-// zero-width joiners. Like the reference, a cluster takes any joiner after an
-// emoji, and an emoji only straight after a zero-width joiner, so a trailing
-// joiner stays in the cluster. Free the result with `emoji_destroy`.
+// A skin-tone modifier, the five Fitzpatrick types.
+@(private = "file")
+is_skin_tone :: proc(r: rune) -> bool {
+	return 0x1F3FB <= r && r <= 0x1F3FF
+}
+
+// The base of a keycap: a digit, "#" or "*". None is in an emoji range.
+@(private = "file")
+is_keycap_base :: proc(r: rune) -> bool {
+	return ('0' <= r && r <= '9') || r == '#' || r == '*'
+}
+
+// keycap_length is how many code points the keycap at `src[0]` takes: the
+// base, an optional U+FE0F and U+20E3. 0 when it is not a keycap.
+@(private = "file")
+keycap_length :: proc(src: []rune) -> int {
+	if len(src) < 2 || !is_keycap_base(src[0]) {
+		return 0
+	}
+	if src[1] == 0x20E3 {
+		return 2
+	}
+	if len(src) >= 3 && src[1] == 0xFE0F && src[2] == 0x20E3 {
+		return 3
+	}
+	return 0
+}
+
+// emoji_clusters returns every emoji in `src` with its code point offset, one
+// per emoji the reader sees. A flag is two regional indicators; a keycap is a
+// digit, "#" or "*" with U+20E3; a skin-tone modifier belongs to the emoji
+// before it; a family or a person at work is several emoji joined by
+// zero-width joiners, toned members included. A cluster takes any joiner
+// after an emoji, and an emoji only straight after a zero-width joiner, so a
+// trailing joiner stays in the cluster. In this the checker follows Unicode
+// where the reference does not (it counted a toned emoji as two and found no
+// keycap); no golden file holds one. Free the result with `emoji_destroy`.
 emoji_clusters :: proc(src: []rune, allocator := context.allocator) -> []Emoji {
 	out := make([dynamic]Emoji, allocator)
 	i, n := 0, len(src)
 	for i < n {
-		if !is_emoji_rune(src[i]) {
+		keycap := keycap_length(src[i:])
+		if keycap == 0 && !is_emoji_rune(src[i]) {
 			i += 1
 			continue
 		}
 		start := i
-		if is_regional(src[i]) && i + 1 < n && is_regional(src[i + 1]) {
+		switch {
+		case keycap > 0:
+			i += keycap
+		case is_regional(src[i]) && i + 1 < n && is_regional(src[i + 1]):
 			i += 2
-		} else {
+		case:
 			i += 1
 		}
 		for i < n {
+			prev := src[i - 1]
 			if is_emoji_joiner(src[i]) {
 				i += 1
-			} else if src[i - 1] == 0x200D && is_emoji_rune(src[i]) {
+			} else if prev == 0x200D && is_emoji_rune(src[i]) {
+				i += 1
+			} else if is_skin_tone(src[i]) && is_emoji_rune(prev) && !is_skin_tone(prev) && !is_regional(prev) {
 				i += 1
 			} else {
 				break

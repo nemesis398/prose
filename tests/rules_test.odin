@@ -387,3 +387,26 @@ equal_findings_keep_their_arrival_order_in_a_long_list :: proc(t: ^testing.T) {
 		}
 	}
 }
+
+// An emoji of any kind in body text is found: a keycap used to slip through
+// because its digit is in no emoji range.
+@(test)
+a_keycap_in_body_text_is_an_emoji_in_body_text :: proc(t: ^testing.T) {
+	for text, i in ([?]string{
+		"Step 1\uFE0F\u20E3 is easy.\n",
+		"Press #\uFE0F\u20E3 now.\n",
+		"Press *\uFE0F\u20E3 now.\n",
+		"Take the thumbs up \U0001F44D\U0001F3FD today.\n",
+	}) {
+		result, err := prose.check_text(text, {lang = "en"})
+		defer prose.file_result_destroy(&result)
+		testing.expect_value(t, err.message, "")
+		hits := 0
+		for f in result.findings {
+			if f.rule == "EMOJI-BODY" {
+				hits += 1
+			}
+		}
+		testing.expectf(t, hits == 1, "case %d: %d EMOJI-BODY findings, want 1", i, hits)
+	}
+}

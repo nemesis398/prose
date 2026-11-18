@@ -259,46 +259,102 @@ emoji_clusters_keep_the_references_quirks :: proc(t: ^testing.T) {
 	}
 }
 
-// Skin-tone modifiers and keycaps are not joined by the reference, and the
-// port reproduces it: a modifier (U+1F3FB..U+1F3FF) is in the emoji range, so
-// it is an emoji of its own unless a zero-width joiner leads into it, and a
-// keycap starts with a digit or "#", which no emoji range holds, so the
-// variation selector and the keycap mark after it have no emoji to join. This
-// pins the offsets of that behavior; a change that follows Unicode here
-// changes the findings for such emoji and needs a reason of its own.
+// One emoji, as the reader sees it, is one cluster: a skin-tone modifier
+// (U+1F3FB..U+1F3FF) belongs to the emoji before it, a joined sequence with
+// toned members is one, and so is a keycap, which is a digit, "#" or "*", an
+// optional U+FE0F and U+20E3. The reference does not do this; its findings
+// differ only for text with such emoji, which no golden file holds.
 @(test)
-emoji_clusters_split_skin_tones_and_skip_keycaps_as_the_reference_does :: proc(t: ^testing.T) {
+emoji_clusters_hold_skin_tones_keycaps_and_toned_joins_as_one :: proc(t: ^testing.T) {
 	src := runes("a 👍🏽 b")
 	defer delete(src)
 	got := prose.emoji_clusters(src)
 	defer prose.emoji_destroy(got)
-	testing.expect_value(t, len(got), 2)
-	if len(got) == 2 {
+	testing.expect_value(t, len(got), 1)
+	if len(got) == 1 {
 		testing.expect_value(t, got[0].offset, 2)
-		testing.expect_value(t, got[0].cluster, "👍")
-		testing.expect_value(t, got[1].offset, 3)
-		testing.expect_value(t, got[1].cluster, "🏽")
+		testing.expect_value(t, got[0].cluster, "👍🏽")
 	}
 
-	// Keycaps: digit or "#", U+FE0F, U+20E3. No emoji is found in any of them.
-	caps := runes("1\uFE0F\u20E3 #\uFE0F\u20E3 *\uFE0F\u20E3")
+	// Keycaps: digit, "#" or "*", U+FE0F, U+20E3; the selector may be absent.
+	caps := runes("1\uFE0F\u20E3 #\uFE0F\u20E3 *\uFE0F\u20E3 9\u20E3")
 	defer delete(caps)
-	none := prose.emoji_clusters(caps)
+	keys := prose.emoji_clusters(caps)
+	defer prose.emoji_destroy(keys)
+	testing.expect_value(t, len(keys), 4)
+	if len(keys) == 4 {
+		testing.expect_value(t, keys[0].offset, 0)
+		testing.expect_value(t, keys[0].cluster, "1\uFE0F\u20E3")
+		testing.expect_value(t, keys[1].offset, 4)
+		testing.expect_value(t, keys[2].offset, 8)
+		testing.expect_value(t, keys[2].cluster, "*\uFE0F\u20E3")
+		testing.expect_value(t, keys[3].offset, 12)
+		testing.expect_value(t, keys[3].cluster, "9\u20E3")
+	}
+
+	// A digit with a variation selector but no keycap mark is no emoji, and
+	// neither is a bare digit or the mark alone after text.
+	plain := runes("1\uFE0F 12 #1 *")
+	defer delete(plain)
+	none := prose.emoji_clusters(plain)
 	defer prose.emoji_destroy(none)
 	testing.expect_value(t, len(none), 0)
 
-	// A woman, a skin tone, a joiner and a laptop: the joiner pulls the laptop
-	// into the cluster that starts at the modifier, which the woman is not part of.
+	// A woman, a skin tone, a joiner and a laptop: one emoji of four code points.
 	tone := runes("👩🏽\u200D💻 x")
 	defer delete(tone)
 	joined := prose.emoji_clusters(tone)
 	defer prose.emoji_destroy(joined)
-	testing.expect_value(t, len(joined), 2)
-	if len(joined) == 2 {
+	testing.expect_value(t, len(joined), 1)
+	if len(joined) == 1 {
 		testing.expect_value(t, joined[0].offset, 0)
-		testing.expect_value(t, joined[0].cluster, "👩")
-		testing.expect_value(t, joined[1].offset, 1)
-		testing.expect_value(t, joined[1].cluster, "🏽\u200D💻")
+		testing.expect_value(t, joined[0].cluster, "👩🏽\u200D💻")
+	}
+
+	// Both members toned: still one.
+	pair := runes("🧑🏽\u200D🤝\u200D🧑🏿!")
+	defer delete(pair)
+	handshake := prose.emoji_clusters(pair)
+	defer prose.emoji_destroy(handshake)
+	testing.expect_value(t, len(handshake), 1)
+	if len(handshake) == 1 {
+		testing.expect_value(t, handshake[0].offset, 0)
+		testing.expect_value(t, handshake[0].cluster, "🧑🏽\u200D🤝\u200D🧑🏿")
+	}
+
+	// Two toned emoji side by side are two; a modifier after a modifier, or
+	// after a flag, starts an emoji of its own; one with no base is one.
+	side := runes("👍🏽👍🏿")
+	defer delete(side)
+	two := prose.emoji_clusters(side)
+	defer prose.emoji_destroy(two)
+	testing.expect_value(t, len(two), 2)
+	if len(two) == 2 {
+		testing.expect_value(t, two[1].offset, 2)
+	}
+	stray := runes("👍🏽🏽 a🏽 \U0001F1E9\U0001F1EA🏽")
+	defer delete(stray)
+	odd := prose.emoji_clusters(stray)
+	defer prose.emoji_destroy(odd)
+	testing.expect_value(t, len(odd), 5)
+}
+
+// A flag is a pair of regional indicators, one emoji, with or without a
+// variation selector; a third indicator starts the next.
+@(test)
+emoji_clusters_hold_a_flag_pair_as_one :: proc(t: ^testing.T) {
+	src := runes("\U0001F1E9\U0001F1EA x \U0001F1FA\U0001F1F8\uFE0F \U0001F1EB\U0001F1F7\U0001F1EC\U0001F1E7")
+	defer delete(src)
+	got := prose.emoji_clusters(src)
+	defer prose.emoji_destroy(got)
+	testing.expect_value(t, len(got), 4)
+	if len(got) == 4 {
+		testing.expect_value(t, got[0].offset, 0)
+		testing.expect_value(t, got[1].offset, 5)
+		testing.expect_value(t, got[1].cluster, "\U0001F1FA\U0001F1F8\uFE0F")
+		testing.expect_value(t, got[2].offset, 9)
+		testing.expect_value(t, got[2].cluster, "\U0001F1EB\U0001F1F7")
+		testing.expect_value(t, got[3].offset, 11)
 	}
 }
 

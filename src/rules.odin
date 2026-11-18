@@ -510,7 +510,13 @@ rule_emoji :: proc(r: ^Rules) {
 		delete(index)
 	}
 	for e in doc {
-		if in_heading[e.offset] || r.m.is_markup[e.offset] {
+		// A keycap on "*" has its star masked as an emphasis mark, as any lone
+		// star is; what makes it text is the rest of the keycap.
+		markup := r.m.is_markup[e.offset]
+		if markup && src_is_star_keycap(r.src, e.offset) {
+			markup = r.m.is_markup[e.offset + 1]
+		}
+		if in_heading[e.offset] || markup {
 			continue
 		}
 		k, ok := index[e.cluster]
@@ -548,6 +554,13 @@ rule_emoji :: proc(r: ^Rules) {
 			)
 		}
 	}
+}
+
+// src_is_star_keycap reports whether the emoji at `at` is a keycap on "*".
+// Only a keycap starts with that: no emoji range holds a star.
+@(private = "file")
+src_is_star_keycap :: proc(src: []rune, at: int) -> bool {
+	return src[at] == '*' && at + 1 < len(src)
 }
 
 // heading_is_code is the reference's `_heading_is_code`: the heading's first
