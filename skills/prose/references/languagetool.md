@@ -221,7 +221,10 @@ mapping layer is needed, and building one produces wrong answers.
 One more, smaller: `software.premium` in the response is `true` even on the
 free endpoint, because it describes the build rather than the request. The
 field that actually tells you is `premiumHint`, which is present exactly when
-premium rules were **not** applied.
+premium rules were **not** applied. The probe therefore reports "premium rules
+active" only when `software.premium` is true and there is no `premiumHint`.
+Any other answer, a self-hosted open-source server included (it says
+`software.premium` is false), reports "free rules only".
 
 ## Mixed-language documents
 

@@ -73,7 +73,8 @@ it printed says how:
 
 - **Setup cannot repair it** when the line says "is not valid JSON", "must be
   a JSON object", "cannot be read", "is not a regular file" or "is too big",
-  or names `ignoreWords`. Setup merges into the stored file, and it never
+  or holds a number prose-check cannot keep exactly (an unknown key with an
+  integer beyond 64 bits, or a float that overflows), or names `ignoreWords`. Setup merges into the stored file, and it never
   writes a result that still fails, so it refuses these. Stop here: show the
   line, and tell the user to fix the file or move it aside by hand, then run
   `/prose:setup` again.
@@ -152,8 +153,9 @@ A key set to `null` is deleted.
 - Set `languageRule` to the rule, or to `null` for "No rule". Leave it out
   when the user kept the stored one.
 - Write every key that step 2 found broken, as it says there.
-- Never add a key such as `apiKey`, `key`, `password` or `token`; the checker
-  refuses them.
+- Never add a key named like a credential (`apiKey`, `key`, `password`,
+  `token`, `secret`, or any name that ends in token, secret or password,
+  whatever the case, dashes, underscores or dots); setup refuses them.
 
 Escape `"` and `\` in every string, so that the object is valid JSON. For
 example:

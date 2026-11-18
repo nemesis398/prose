@@ -12,6 +12,7 @@ Python.
 | `lt-recordings/` | LanguageTool's responses, one file per request, named by the recording key |
 | `mask/` | the Markdown masking (`NAME.json`) and the language blocks (`NAME.blocks.json`) of each corpus file |
 | `stub/` | stand-ins for `hunspell` and its failure modes |
+| `gen/` | `pyre_tables.py`, the generator of `src/pyre_tables.odin` (see below); no test runs it |
 | `fake_lt.odin` | the fake LanguageTool server; its top comment defines the recording key, with the probe's test vector |
 
 ## Where the goldens came from
@@ -49,6 +50,19 @@ How each set was made, in that tree:
   prose left and the port sends nothing for one. `make_golden.sh` does it with
   `sed` at its end. A few expectations in `rules_test.odin` are hand-written
   too, where the reference crashed or was wrong; each says so in its comment.
+
+## The Python class tables
+
+`src/pyre_tables.odin` holds Python's `\w` and `\d` as code point ranges, so
+that the mask sees a word boundary exactly where the reference did.
+`gen/pyre_tables.py` writes it: it asks the running Python's `re` about every
+code point but the surrogates and joins the hits into ranges.
+`python3 -I tests/gen/pyre_tables.py` rewrites the file, and with `--check` it
+only compares, exiting 1 when the committed file differs from what it would
+write. The committed tables came from Python 3.14.10 (Unicode 16.0.0); on
+another version the run says so on stderr, and a difference then means a newer
+Unicode, not an error. `make test` does not run it, because the suite needs no
+Python; `mask_test.odin` checks the tables at known code points instead.
 
 ## Regenerating
 
