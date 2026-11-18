@@ -67,7 +67,7 @@ exit status: 0 clean, 1 an error found (or a warning with --strict),
 //   `$PROSE_HUNSPELL`, else `hunspell` on PATH.
 // - `rbw`: the Premium key lookup through rbw; nil is rbw absent.
 // - `lt_timing`: LanguageTool's timeouts and retries; the zero value means
-//   `LT_TIMING`.
+//   `LT_TIMING`. Its `no_proxy` is the list of hosts that bypass a proxy.
 //
 // `run` only reads it; its strings belong to the caller.
 Run_Env :: struct {
@@ -86,6 +86,10 @@ Run_Env :: struct {
 // `allocator`; free with `run_env_destroy`.
 run_env_from_os :: proc(allocator := context.allocator) -> Run_Env {
 	_, no_color := os.lookup_env("NO_COLOR", context.temp_allocator)
+	_, no_proxy_lower := os.lookup_env("no_proxy", context.temp_allocator)
+	_, no_proxy_upper := os.lookup_env("NO_PROXY", context.temp_allocator)
+	timing := LT_TIMING
+	timing.no_proxy = loopback_no_proxy(no_proxy_lower || no_proxy_upper)
 	return Run_Env {
 		lt = env_from_os(allocator),
 		config_dir = config_dir(allocator),
@@ -95,7 +99,7 @@ run_env_from_os :: proc(allocator := context.allocator) -> Run_Env {
 		stdin_is_terminal = os.is_tty(os.stdin),
 		hunspell_command = strings.clone(hunspell_program(), allocator),
 		rbw = rbw_lookup,
-		lt_timing = LT_TIMING,
+		lt_timing = timing,
 	}
 }
 

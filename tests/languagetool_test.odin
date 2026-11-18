@@ -682,6 +682,49 @@ post_form_stops_when_libcurl_refuses_an_option :: proc(t: ^testing.T) {
 	testing.expect_value(t, fake_lt_requests(fake), 0)
 }
 
+// Loopback does not go through a proxy unless the user's no_proxy says so:
+// with the bypass the request reaches the server, without it the proxy.
+@(test)
+loopback_bypasses_a_proxy :: proc(t: ^testing.T) {
+	target, target_port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, target)
+	proxy, proxy_port := fake_lt_start(RECORDINGS, .Refuse_403)
+	defer fake_lt_stop(t, proxy)
+	if !testing.expect(t, target != nil && proxy != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d/v2/check", target_port)
+	defer delete(url)
+	proxy_url := fmt.aprintf("http://127.0.0.1:%d", proxy_port)
+	defer delete(proxy_url)
+	fields := [][2]string{{"text", "This are a test."}, {"language", "en-US"}}
+
+	status, body, herr := prose.post_form(url, fields, 5, {proxy = proxy_url, no_proxy = prose.loopback_no_proxy(false)})
+	delete(body)
+	delete(herr.message)
+	testing.expect_value(t, status, 200)
+	testing.expect_value(t, fake_lt_requests(target), 1)
+	testing.expect_value(t, fake_lt_requests(proxy), 0)
+
+	// The premise: without the bypass the same request goes to the proxy.
+	status, body, herr = prose.post_form(url, fields, 5, {proxy = proxy_url})
+	delete(body)
+	delete(herr.message)
+	testing.expect_value(t, fake_lt_requests(target), 1)
+	testing.expect_value(t, fake_lt_requests(proxy), 1)
+}
+
+// The user's own no_proxy wins: the bypass list is empty then, so that
+// libcurl reads the variable.
+@(test)
+the_loopback_bypass_yields_to_the_users_no_proxy :: proc(t: ^testing.T) {
+	testing.expect_value(t, prose.loopback_no_proxy(true), "")
+	got := prose.loopback_no_proxy(false)
+	for host in ([]string{"localhost", "127.0.0.1", "::1"}) {
+		testing.expectf(t, strings.contains(got, host), "%q lacks %s", got, host)
+	}
+}
+
 // The fake's accept loop dying of an error nobody asked for is reported at
 // stop, and stopping does not hang. Linux only: shutdown on a listening
 // socket is what makes accept fail there.

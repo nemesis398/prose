@@ -21,10 +21,16 @@ MAX_CHUNK :: 18000
 // reference waits 30 s for a check and 12 s for the probe, and retries a
 // rate limit, a server error or a lost connection twice, pausing 2 s and
 // then 4 s (`retry_pause_ms` times the attempt).
+//
+// `no_proxy` is not a timing, but it travels with it from the command line
+// to the request: the hosts that bypass a proxy, as libcurl's NOPROXY takes
+// them; "" leaves it to the `no_proxy` variable. `main` fills it in from the
+// process environment.
 Lt_Timing :: struct {
 	request_s, probe_s: int,
 	retries:            int,
 	retry_pause_ms:     int,
+	no_proxy:           string,
 }
 
 LT_TIMING :: Lt_Timing {
@@ -558,7 +564,7 @@ lt_post :: proc(
 	defer delete(url, allocator)
 
 	for attempt := 0; ; attempt += 1 {
-		status, body, err := post_form(url, all[:], timeout_s, allocator)
+		status, body, err := post_form(url, all[:], timeout_s, Http_Options{no_proxy = timing.no_proxy}, allocator)
 		defer delete(body, allocator)
 		retry := false
 		if err.message != "" {

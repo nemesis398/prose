@@ -36,6 +36,29 @@ Http_Error_Kind :: enum {
 	Local,
 }
 
+// What a caller may ask of one request beyond the URL and the form.
+//
+// - `no_proxy`: libcurl's NOPROXY list, a comma-separated list of hosts that
+//   bypass a proxy. "" sets nothing, which leaves it to the `no_proxy`
+//   variable.
+// - `proxy`: the proxy to use. "" leaves it to the `http_proxy` variables. It
+//   exists so that a test can name a proxy without touching the process
+//   environment.
+Http_Options :: struct {
+	no_proxy, proxy: string,
+}
+
+// The hosts that never go through a proxy: the machine itself, which is where
+// a self-hosted LanguageTool and the test server live.
+LOOPBACK_NO_PROXY :: "localhost,127.0.0.1,::1"
+
+// loopback_no_proxy is the `no_proxy` option of `Http_Options` to use when
+// the user did (`user_set`) or did not set `no_proxy` or `NO_PROXY`. A user
+// who set it keeps their list, empty included.
+loopback_no_proxy :: proc(user_set: bool) -> string {
+	return "" if user_set else LOOPBACK_NO_PROXY
+}
+
 // An answer bigger than this is refused. LanguageTool's answer to a full
 // chunk is a few hundred kilobytes.
 MAX_RESPONSE_BYTES :: 32 << 20
@@ -118,7 +141,8 @@ form_encode :: proc(fields: [][2]string, allocator := context.allocator) -> stri
 // post_form POSTs `fields`, form-encoded, to `url` and returns the status
 // and the body of the answer, whatever the status. Redirects are not
 // followed, only http and https are spoken, and the whole exchange,
-// connecting included, must finish within `timeout_s` seconds.
+// connecting included, must finish within `timeout_s` seconds. `opts` says
+// which hosts bypass a proxy.
 //
 // Every option is checked: one that libcurl refuses stops the request before
 // it is sent, with an error naming the option, because a timeout or a
@@ -131,6 +155,7 @@ post_form :: proc(
 	url: string,
 	fields: [][2]string,
 	timeout_s: int,
+	opts: Http_Options = {},
 	allocator := context.allocator,
 ) -> (
 	status: int,
@@ -157,6 +182,10 @@ post_form :: proc(
 	defer delete(curl_url, allocator)
 	payload := form_encode(fields, allocator)
 	defer delete(payload, allocator)
+	curl_no_proxy := strings.clone_to_cstring(opts.no_proxy, allocator)
+	defer delete(curl_no_proxy, allocator)
+	curl_proxy := strings.clone_to_cstring(opts.proxy, allocator)
+	defer delete(curl_proxy, allocator)
 
 	headers: ^curl.slist
 	headers = curl.slist_append(headers, "Accept: application/json")
@@ -184,6 +213,12 @@ post_form :: proc(
 	option(&set, curl.easy_setopt(h, .TIMEOUT, c.long(timeout_s)), "TIMEOUT")
 	// No signals: the timeout must not use SIGALRM in a threaded program.
 	option(&set, curl.easy_setopt(h, .NOSIGNAL, c.long(1)), "NOSIGNAL")
+	if opts.no_proxy != "" {
+		option(&set, curl.easy_setopt(h, .NOPROXY, curl_no_proxy), "NOPROXY")
+	}
+	if opts.proxy != "" {
+		option(&set, curl.easy_setopt(h, .PROXY, curl_proxy), "PROXY")
+	}
 	if set.failed != "" {
 		delete(sink.body)
 		msg := fmt.aprintf("curl refused its %s option: %s", set.failed, curl.easy_strerror(set.code), allocator = allocator)
