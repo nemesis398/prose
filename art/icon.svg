@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="34 -14 140 140" width="1024" height="1024">
+  <!-- The project art of prose, made square, in Catppuccin Mocha: crust
+       ground, surface2 lines, mauve accent. Rendered to
+       .claude-plugin/icon.png with headless Chromium at 1024 px
+       (--window-size=1024,1024 --screenshot). -->
+  <rect x="34" y="-14" width="140" height="140" fill="#11111b"/>
+  <g fill="none" stroke-linecap="square">
+    <path stroke="#585b70" stroke-width="2" d="M44 30 h80 M44 42 h96 M44 66 h88"/>
+    <path stroke="#cba6f7" stroke-width="2.5" stroke-linejoin="miter" d="M44 54 h70"/>
+    <path stroke="#cba6f7" stroke-width="2.5" stroke-linejoin="miter" d="M150 20 l14 14 l-34 34 l-18 4 l4 -18 z M144 26 l14 14"/>
+  </g>
+  <text x="44" y="88" fill="#a6adc8" font-family="JetBrainsMono Nerd Font, JetBrains Mono, monospace" font-size="11">0 errors</text>
+</svg>
