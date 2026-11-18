@@ -4,14 +4,16 @@ weight: 1
 ---
 
 The response contains a German paragraph (or a short text of a few
-paragraphs) written from the draft. Judge the newsletter text itself; the
-comments around it may name the em dash they removed. It passes only if all
-of these hold:
+paragraphs) written from the draft. Judge the newsletter text itself. A reply
+may name the em dash character (U+2014) when it explains a change, and naming
+it does not count as using one; a dash in the newsletter text does. It passes
+only if all of these hold:
 
 - the newsletter text contains no em dash (U+2014);
-- it keeps the draft's spaced en dash (` – `) as a Gedankenstrich, and has
-  one or two dashes in total, never one in every sentence; any Gedankenstrich
-  is a spaced en dash, never an em dash or a spaced hyphen ` - `;
+- it contains one or two spaced en dashes (` – `) as Gedankenstrich, no more
+  and not none, never one in every sentence; no dash of any other kind
+  stands in for a Gedankenstrich, neither an em dash nor a spaced hyphen
+  ` - `;
 - the numbers and units follow DIN 5008: a space before `%` and `€` (`30 %`,
   `12 %`, `4,50 €`), a period or space as thousands separator (`18.000 €`),
   and the range `3-4` written as `3–4` with an unspaced en dash or as words
