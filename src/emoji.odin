@@ -61,14 +61,13 @@ is_keycap_base :: proc(r: rune) -> bool {
 }
 
 // keycap_length is how many code points the keycap at `src[0]` takes: the
-// base, an optional U+FE0F and U+20E3. 0 when it is not a keycap.
+// base, U+FE0F and U+20E3 (3), or 0. UTS #51 makes only that sequence a
+// keycap; a base with U+20E3 alone is unqualified, and many fonts draw it as
+// text, so it is no emoji here.
 @(private = "file")
 keycap_length :: proc(src: []rune) -> int {
 	if len(src) < 2 || !is_keycap_base(src[0]) {
 		return 0
-	}
-	if src[1] == 0x20E3 {
-		return 2
 	}
 	if len(src) >= 3 && src[1] == 0xFE0F && src[2] == 0x20E3 {
 		return 3
@@ -78,8 +77,8 @@ keycap_length :: proc(src: []rune) -> int {
 
 // emoji_clusters returns every emoji in `src` with its code point offset, one
 // per emoji the reader sees. A flag is two regional indicators; a keycap is a
-// digit, "#" or "*" with U+20E3; a skin-tone modifier belongs to the emoji
-// before it; a family or a person at work is several emoji joined by
+// digit, "#" or "*" with U+FE0F and U+20E3; a skin-tone modifier belongs to
+// the emoji before it; a family or a person at work is several emoji joined by
 // zero-width joiners, toned members included. A cluster takes any joiner
 // after an emoji, and an emoji only straight after a zero-width joiner, so a
 // trailing joiner stays in the cluster. In this the checker follows Unicode

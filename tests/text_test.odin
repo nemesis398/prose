@@ -261,8 +261,8 @@ emoji_clusters_keep_the_references_quirks :: proc(t: ^testing.T) {
 
 // One emoji, as the reader sees it, is one cluster: a skin-tone modifier
 // (U+1F3FB..U+1F3FF) belongs to the emoji before it, a joined sequence with
-// toned members is one, and so is a keycap, which is a digit, "#" or "*", an
-// optional U+FE0F and U+20E3. The reference does not do this; its findings
+// toned members is one, and so is a keycap, which is a digit, "#" or "*", a
+// U+FE0F and U+20E3. The reference does not do this; its findings
 // differ only for text with such emoji, which no golden file holds.
 @(test)
 emoji_clusters_hold_skin_tones_keycaps_and_toned_joins_as_one :: proc(t: ^testing.T) {
@@ -276,8 +276,8 @@ emoji_clusters_hold_skin_tones_keycaps_and_toned_joins_as_one :: proc(t: ^testin
 		testing.expect_value(t, got[0].cluster, "👍🏽")
 	}
 
-	// Keycaps: digit, "#" or "*", U+FE0F, U+20E3; the selector may be absent.
-	caps := runes("1\uFE0F\u20E3 #\uFE0F\u20E3 *\uFE0F\u20E3 9\u20E3")
+	// Keycaps: digit, "#" or "*", U+FE0F, U+20E3, as UTS #51 has them.
+	caps := runes("1\uFE0F\u20E3 #\uFE0F\u20E3 *\uFE0F\u20E3 9\uFE0F\u20E3")
 	defer delete(caps)
 	keys := prose.emoji_clusters(caps)
 	defer prose.emoji_destroy(keys)
@@ -289,8 +289,16 @@ emoji_clusters_hold_skin_tones_keycaps_and_toned_joins_as_one :: proc(t: ^testin
 		testing.expect_value(t, keys[2].offset, 8)
 		testing.expect_value(t, keys[2].cluster, "*\uFE0F\u20E3")
 		testing.expect_value(t, keys[3].offset, 12)
-		testing.expect_value(t, keys[3].cluster, "9\u20E3")
+		testing.expect_value(t, keys[3].cluster, "9\uFE0F\u20E3")
 	}
+
+	// Without U+FE0F the sequence is unqualified, and many fonts draw it as
+	// text: a digit, "#" or "*" with U+20E3 alone is no emoji.
+	bare := runes("1\u20E3 #\u20E3 *\u20E3 9\u20E3 x")
+	defer delete(bare)
+	unqualified := prose.emoji_clusters(bare)
+	defer prose.emoji_destroy(unqualified)
+	testing.expect_value(t, len(unqualified), 0)
 
 	// A digit with a variation selector but no keycap mark is no emoji, and
 	// neither is a bare digit or the mark alone after text.

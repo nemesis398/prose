@@ -388,6 +388,18 @@ equal_findings_keep_their_arrival_order_in_a_long_list :: proc(t: ^testing.T) {
 	}
 }
 
+// A keycap without U+FE0F is unqualified (UTS #51) and is no emoji, so body
+// text with one draws no finding.
+@(test)
+an_unqualified_keycap_is_no_emoji_in_body_text :: proc(t: ^testing.T) {
+	result, err := prose.check_text("Step 1\u20E3 is easy, and so is 2\u20E3.\n", {lang = "en"})
+	defer prose.file_result_destroy(&result)
+	testing.expect_value(t, err.message, "")
+	for f in result.findings {
+		testing.expectf(t, !strings.has_prefix(f.rule, "EMOJI"), "%s: %s", f.rule, f.message)
+	}
+}
+
 // An emoji of any kind in body text is found: a keycap used to slip through
 // because its digit is in no emoji range.
 @(test)
