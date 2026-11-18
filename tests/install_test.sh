@@ -98,19 +98,39 @@ exit 1
 EOF
 chmod 755 "$fake/sysctl"
 
-# A timeout that records the limit it was given and shortens the wait to one
-# second, whatever the script asked for. Only cases that put $withtimeout on
-# PATH use it.
+# A timeout that understands -k, records its arguments up to the command (one
+# line per call, in timeout-calls; the last in timeout-used) and shortens the
+# wait to one second, whatever the script asked for. Only cases that put
+# $withtimeout on PATH use it.
 real_timeout=$(command -v timeout || :)
 withtimeout="$work/withtimeout"
 mkdir -p "$withtimeout"
 cat >"$withtimeout/timeout" <<TEOF
 #!/bin/sh
-echo "\$1" >"$work/timeout-used"
-shift
+if [ "\$1" != -k ]; then
+	echo "timeout: this stub takes -k SECONDS SECONDS" >&2
+	exit 125
+fi
+echo "\$1 \$2 \$3" >"$work/timeout-used"
+echo "\$1 \$2 \$3" >>"$work/timeout-calls"
+shift 3
 exec "$real_timeout" 1 "\$@"
 TEOF
 chmod 755 "$withtimeout/timeout"
+
+# A timeout as busybox before 1.30 has it: -t SECONDS, and -k is an error that
+# exits before the command runs. Each call is recorded in timeout-calls.
+oldtimeout="$work/oldtimeout"
+mkdir -p "$oldtimeout"
+cat >"$oldtimeout/timeout" <<TEOF
+#!/bin/sh
+echo "\$*" >>"$work/timeout-calls"
+case \$1 in
+-k) echo "timeout: invalid option -- 'k'" >&2; exit 1 ;;
+esac
+exec "$real_timeout" "\$@"
+TEOF
+chmod 755 "$oldtimeout/timeout"
 
 # A curl that writes a partial file and then hangs, to test the signal trap.
 slowfake="$work/slowfake"
@@ -374,12 +394,28 @@ suite_run() {
 		mkdir -p "$bin"
 		printf '#!/bin/sh\nexec sleep 5\n' >"$bin/prose-check"
 		chmod 755 "$bin/prose-check"
-		rm -f "$work/timeout-used"
+		rm -f "$work/timeout-used" "$work/timeout-calls"
 		invoke "$withtimeout:$fake:$PATH" "$root"
 		check "hanging --version: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
 		check "hanging --version: the probe ran under timeout" [ -e "$work/timeout-used" ]
-		check "hanging --version: timeout was given a number of seconds" is_seconds "$work/timeout-used"
+		check "hanging --version: timeout kills after 2 s what ignores TERM, at 10 s" [ "$(cat "$work/timeout-used")" = "-k 2 10" ]
 		check "hanging --version: replaced" [ "$("$bin/prose-check" --version)" = "prose-check 0.1.0" ]
+
+		# a timeout that does not know -k (busybox before 1.30): the probe runs
+		# without it, so a binary that is the right version is still kept
+		setup_root "$root"
+		run "$root"
+		rm -f "$work/timeout-calls"
+		invoke "$oldtimeout:$fake:$PATH" "$root"
+		check "timeout without -k: a matching binary is kept (got $rc: $out)" contains "$out" "already installed"
+		check "timeout without -k: -k was tried once, and the probe ran without timeout" [ "$(cat "$work/timeout-calls")" = "-k 2 10 true" ]
+		# and a binary that fails the probe is replaced, as before
+		mkdir -p "$bin"
+		printf '#!/bin/sh\nexit 3\n' >"$bin/prose-check"
+		chmod 755 "$bin/prose-check"
+		invoke "$oldtimeout:$fake:$PATH" "$root"
+		check "timeout without -k: a failing --version is replaced (got $rc: $out)" [ "$rc" -eq 0 ]
+		check "timeout without -k: replaced by the release" [ "$("$bin/prose-check" --version)" = "prose-check 0.1.0" ]
 	fi
 
 	# without timeout on PATH the probe still works, as before

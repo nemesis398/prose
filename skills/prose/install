@@ -132,11 +132,13 @@ if [ -d "$bin_dir" ]; then
 fi
 
 # A binary that already reports this version stays. Its --version gets ten
-# seconds where timeout exists, so a binary that hangs cannot hang the install;
-# without timeout the probe runs as it always did.
+# seconds where timeout exists, and two more to die after a TERM it ignores
+# (-k), so a binary that hangs cannot hang the install. A timeout that does not
+# know -k (busybox before 1.30 takes -t) fails the check run on `true`, and the
+# probe then runs without timeout, as it always did.
 if [ "$force" -eq 0 ] && [ -f "$target" ] && [ -x "$target" ]; then
-	if command -v timeout >/dev/null 2>&1; then
-		have=$(timeout 10 "$target" --version 2>/dev/null) || have=
+	if command -v timeout >/dev/null 2>&1 && timeout -k 2 10 true >/dev/null 2>&1; then
+		have=$(timeout -k 2 10 "$target" --version 2>/dev/null) || have=
 	else
 		have=$("$target" --version 2>/dev/null) || have=
 	fi
