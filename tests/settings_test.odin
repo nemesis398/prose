@@ -205,6 +205,37 @@ a_file_that_is_present_but_unusable_is_an_error_naming_it :: proc(t: ^testing.T)
 	)
 }
 
+// A JSON error says where it is. Columns count bytes from 1, lines from 1.
+@(test)
+a_json_error_names_the_line_and_the_column :: proc(t: ^testing.T) {
+	expect_unusable(t, "{\n  \"a\": }", "line 2, column 8")
+	expect_unusable(t, `{"a": 1} x`, "line 1, column 10")
+	expect_unusable(t, "{\"a\": 1,\n\n  \"b\" 2}", "line 3")
+	expect_unusable(t, `{`, "line 1")
+	expect_unusable(t, ``, "line 1, column 1")
+	// The error kind stays in the message too.
+	expect_unusable(t, `{"a": }`, "Unexpected_Token")
+}
+
+// Strict JSON, as Python reads it: a trailing comma is an error, and so is a
+// key given twice.
+@(test)
+a_trailing_comma_is_refused_and_a_duplicate_key_too :: proc(t: ^testing.T) {
+	expect_unusable(t, `{"languageRule": "r",}`, "trailing comma at line 1, column 21")
+	expect_unusable(t, `{"languagetool": {"backend": "public",}}`, "trailing comma")
+	expect_unusable(t, `{"ignoreWords": ["a",]}`, "trailing comma at line 1, column 21")
+	expect_unusable(t, `{"x": [1, 2,], "y": 1}`, "is not valid JSON")
+	expect_unusable(t, "{\n  \"a\": 1,\n}\n", "trailing comma at line 2, column 9")
+	// A comma inside a string is no trailing comma.
+	s, err, path, dir := load(t, `{"languageRule": ",}", "ignoreWords": ["a,]"]}`)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, err.problem, "")
+	testing.expect_value(t, s.language_rule, ",}")
+	// Duplicate keys, at the top and inside "languagetool".
+	expect_unusable(t, `{"languageRule": "a", "languageRule": "b"}`, "duplicate key")
+	expect_unusable(t, `{"languagetool": {"backend": "none", "backend": "public"}}`, "duplicate key")
+}
+
 @(test)
 the_server_url_is_checked_where_it_is_used_and_in_any_case :: proc(t: ^testing.T) {
 	// The scheme is case-insensitive, as libcurl reads it.

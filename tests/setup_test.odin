@@ -83,6 +83,22 @@ read :: proc(path: string) -> string {
 	return string(data)
 }
 
+@(private = "file")
+cat :: proc(parts: ..string) -> string {
+	return strings.concatenate(parts, context.temp_allocator)
+}
+
+// read_text is `read` for a call that does not free: the result is the
+// temporary allocator's.
+@(private = "file")
+read_text :: proc(path: string) -> string {
+	data, err := os.read_entire_file(path, context.temp_allocator)
+	if err != nil {
+		return "(missing)"
+	}
+	return string(data)
+}
+
 // names lists the entries of `dir`, sorted, joined with a space.
 @(private = "file")
 names :: proc(dir: string) -> string {
@@ -473,6 +489,55 @@ input_that_is_not_a_json_object_is_refused :: proc(t: ^testing.T) {
 	listing := names(dir)
 	defer delete(listing)
 	testing.expect_value(t, listing, "config.json")
+}
+
+// One wording, in the checker and in setup: the text must be a JSON object.
+@(test)
+setup_and_the_checker_word_a_non_object_alike :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	c := values(dir, `[1]`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	expect_contains(t, c.err, "prose: the values on standard input must be a JSON object\n")
+	put(t, path, `[]`)
+	c2 := values(dir, `{"languageRule": "R"}`)
+	defer cli_done(&c2)
+	testing.expect_value(t, c2.code, 2)
+	expect_contains(t, c2.err, cat(path, ": must be a JSON object"))
+	expect_lacks(t, c2.err, "is not a JSON object")
+	expect_file(t, path, `[]`)
+	// The checker says the same of the same file.
+	s, err := prose.load_settings(path)
+	defer prose.settings_destroy(&s)
+	defer prose.settings_error_destroy(&err)
+	expect_contains(t, err.problem, "must be a JSON object")
+}
+
+@(test)
+a_trailing_comma_or_a_duplicate_key_is_refused_with_its_place :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	put(t, path, `{"languageRule": "keep"}`)
+	c := values(dir, `{"languageRule": "R",}`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	expect_contains(t, c.err, "the values on standard input are not valid JSON (trailing comma at line 1, column 21")
+	c2 := values(dir, `{"languageRule": "R", "languageRule": "S"}`)
+	defer cli_done(&c2)
+	testing.expect_value(t, c2.code, 2)
+	expect_contains(t, c2.err, "duplicate key")
+	// The same faults in the stored file are the file's.
+	put(t, path, "{\n  \"languageRule\": \"r\",\n}\n")
+	c3 := values(dir, `{"languageRule": "R"}`)
+	defer cli_done(&c3)
+	testing.expect_value(t, c3.code, 2)
+	expect_contains(t, c3.err, cat(path, ": is not valid JSON (trailing comma at line 2, column 22"))
+	expect_file(t, path, "{\n  \"languageRule\": \"r\",\n}\n")
 }
 
 @(test)

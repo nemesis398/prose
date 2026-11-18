@@ -291,27 +291,18 @@ parse_settings :: proc(
 		return
 	}
 	defer delete(data, allocator)
-	text := string(data)
-	text = strings.trim_prefix(text, "\xEF\xBB\xBF")
-
-	// A parser of our own rather than `json.parse`, which stops after the
-	// first value and would let anything after it through.
-	parser := json.make_parser_from_string(text, .JSON, false, allocator)
-	root, jerr := json.parse_value(&parser)
-	if jerr != .None {
-		err = fail(path, allocator, "is not valid JSON (%v)", jerr)
-		return
-	}
+	root, kind, detail := parse_json_object(string(data), allocator)
 	defer json.destroy_value(root, allocator)
-	if parser.curr_token.kind != .EOF {
-		err = fail(path, allocator, "is not valid JSON (text after the closing brace)")
+	switch kind {
+	case .None:
+	case .Syntax:
+		err = fail(path, allocator, "is not valid JSON (%s)", detail)
 		return
-	}
-	obj, is_obj := root.(json.Object)
-	if !is_obj {
+	case .Not_Object:
 		err = fail(path, allocator, "must be a JSON object")
 		return
 	}
+	obj := root.(json.Object)
 	return read_settings(obj, path, false, allocator)
 }
 
@@ -388,6 +379,87 @@ read_settings :: proc(
 	slice.sort(unknown[:])
 	s.unknown_keys = unknown[:]
 	return
+}
+
+// What is wrong with a text that should be one JSON object.
+@(private)
+Json_Problem :: enum {
+	None,
+	Syntax, // not valid JSON; `detail` says what and where
+	Not_Object, // valid JSON, but not an object
+}
+
+// parse_json_object parses `text` as one JSON object and nothing after it.
+// A byte order mark is skipped. The text is strict JSON: core:encoding/json
+// takes a trailing comma in an object or a list, and this refuses it, as
+// Python's json does. A key given twice is refused by the parser.
+//
+// On a problem `root` is nil (everything is freed) and `detail` says what
+// and where, with the line and the column; it is allocated with
+// `context.temp_allocator`. Otherwise `root` is an object, to be freed with
+// `json.destroy_value`.
+//
+// Numbers are parsed as integers where they are integers, as the parser
+// reads them.
+@(private)
+parse_json_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
+	body := strings.trim_prefix(text, "\xEF\xBB\xBF")
+	// A parser of our own rather than `json.parse`, which stops after the
+	// first value and would let anything after it through.
+	parser := json.make_parser_from_string(body, .JSON, true, allocator)
+	value, jerr := json.parse_value(&parser)
+	if jerr != .None {
+		// The offending token is the one the parser has just stepped over.
+		where_ := position_text(body, parser.prev_token.offset)
+		if jerr == .Duplicate_Object_Key {
+			return nil, .Syntax, fmt.tprintf("duplicate key, near %s", where_)
+		}
+		return nil, .Syntax, fmt.tprintf("%v at %s", jerr, where_)
+	}
+	if parser.curr_token.kind != .EOF {
+		json.destroy_value(value, allocator)
+		return nil, .Syntax, fmt.tprintf("text after the end of the value, at %s", position_text(body, parser.curr_token.offset))
+	}
+	if offset, found := find_trailing_comma(body); found {
+		json.destroy_value(value, allocator)
+		return nil, .Syntax, fmt.tprintf("trailing comma at %s, which JSON does not allow", position_text(body, offset))
+	}
+	if _, is_obj := value.(json.Object); !is_obj {
+		json.destroy_value(value, allocator)
+		return nil, .Not_Object, ""
+	}
+	return value, .None, ""
+}
+
+// position_text is "line L, column C" for the byte `offset` of `text`,
+// counting from 1; the column counts bytes. It is worked out here because
+// the tokenizer's own columns count from 0 on the first line and from 1 on
+// the others.
+@(private)
+position_text :: proc(text: string, offset: int) -> string {
+	before := text[:clamp(offset, 0, len(text))]
+	line := 1 + strings.count(before, "\n")
+	column := len(before) - (strings.last_index_byte(before, '\n') + 1) + 1
+	return fmt.tprintf("line %d, column %d", line, column)
+}
+
+// find_trailing_comma looks for a comma right before a closing brace or
+// bracket. It reads the tokens, so a comma inside a string does not count.
+// The text has parsed already.
+@(private = "file")
+find_trailing_comma :: proc(text: string) -> (offset: int, found: bool) {
+	t := json.make_tokenizer(text, .JSON, true)
+	prev: json.Token
+	for {
+		tok, err := json.get_token(&t)
+		if err != .None || tok.kind == .EOF {
+			return 0, false
+		}
+		if (tok.kind == .Close_Brace || tok.kind == .Close_Bracket) && prev.kind == .Comma {
+			return prev.offset, true
+		}
+		prev = tok
+	}
 }
 
 @(private = "file")

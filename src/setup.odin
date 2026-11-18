@@ -60,34 +60,23 @@ apply_values :: proc(path, values_json: string, allocator := context.allocator) 
 	if len(values_json) > MAX_SETTINGS_BYTES {
 		return setup_fail(path, allocator, "the values are too big (%d bytes)", len(values_json))
 	}
-	root, problem := parse_object(values_json, allocator)
-	if problem != "" {
-		defer json.destroy_value(root, allocator)
-		return setup_fail(path, allocator, "the values on standard input are %s", problem)
-	}
+	root, kind, detail := parse_object(values_json, allocator)
 	defer json.destroy_value(root, allocator)
+	switch kind {
+	case .None:
+	case .Syntax:
+		return setup_fail(path, allocator, "the values on standard input are not valid JSON (%s)", detail)
+	case .Not_Object:
+		return setup_fail(path, allocator, "the values on standard input must be a JSON object")
+	}
 	values := &root.(json.Object)
 	return apply_object(path, values, "the values on standard input", allocator)
 }
 
-// parse_object parses `text` as one JSON object, and nothing after it. The
-// problem is "" or a short phrase; on a problem the value is to be freed
-// all the same. A byte order mark is skipped.
+// parse_object is `parse_json_object` for setup.
 @(private = "file")
-parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, problem: string) {
-	body := strings.trim_prefix(text, "\xEF\xBB\xBF")
-	parser := json.make_parser_from_string(body, .JSON, false, allocator)
-	value, jerr := json.parse_value(&parser)
-	if jerr != .None {
-		return value, fmt.tprintf("not valid JSON (%v)", jerr)
-	}
-	if parser.curr_token.kind != .EOF {
-		return value, "not valid JSON (text after the closing brace)"
-	}
-	if _, is_obj := value.(json.Object); !is_obj {
-		return value, "not a JSON object"
-	}
-	return value, ""
+parse_object :: proc(text: string, allocator: runtime.Allocator) -> (root: json.Value, kind: Json_Problem, detail: string) {
+	return parse_json_object(text, allocator)
 }
 
 // is_key_name tells whether `name` is a spelling of the API key's name.
@@ -235,9 +224,13 @@ read_stored :: proc(target, path: string, allocator: runtime.Allocator) -> (valu
 	if rerr != nil {
 		return nil, setup_fail(path, allocator, "%s: cannot be read (%s)", path, os.error_string(rerr))
 	}
-	parsed, problem := parse_object(string(data), allocator)
-	if problem != "" {
-		return parsed, setup_fail(path, allocator, "%s: is %s", path, problem)
+	parsed, kind, detail := parse_object(string(data), allocator)
+	switch kind {
+	case .None:
+	case .Syntax:
+		return parsed, setup_fail(path, allocator, "%s: is not valid JSON (%s)", path, detail)
+	case .Not_Object:
+		return parsed, setup_fail(path, allocator, "%s: must be a JSON object", path)
 	}
 	return parsed, {}
 }
