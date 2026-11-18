@@ -6,9 +6,11 @@ import "core:sys/posix"
 
 // ignore_sigpipe turns the broken-pipe signal into an error on `write`, so a
 // child that dies before it has read its input cannot kill this process.
-// The child inherits the setting, which does it no harm.
+// The child inherits the setting: a program of ours that writes into a closed
+// pipe (hunspell, rbw) gets EPIPE instead of dying, which they report.
 ignore_sigpipe :: proc() {
-	_ = posix.sigignore(.SIGPIPE)
+	// The previous handler comes back, or SIG_ERR; neither matters here.
+	_ = posix.signal(.SIGPIPE, auto_cast posix.SIG_IGN)
 }
 
 // set_nonblocking makes a write to `f` return at once instead of waiting
