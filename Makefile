@@ -39,7 +39,7 @@ lint:
 
 # The repository's own prose, held to the style it teaches. The rule pass
 # only: the bad examples sit in code blocks, which the checker masks.
-DOCS := README.md skills/prose/SKILL.md skills/prose/references/*.md DESIGN.md commands/setup.md
+DOCS := README.md CHANGELOG.md skills/prose/SKILL.md skills/prose/references/*.md DESIGN.md commands/setup.md
 
 doccheck:
 	skills/prose/bin/prose-check --no-lt $(DOCS)
