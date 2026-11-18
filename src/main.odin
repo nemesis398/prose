@@ -67,7 +67,7 @@ exit status: 0 clean, 1 an error found (or a warning with --strict),
 //   `$PROSE_HUNSPELL`, else `hunspell` on PATH.
 // - `rbw`: the Premium key lookup through rbw; nil is rbw absent.
 // - `lt_timing`: LanguageTool's timeouts and retries; the zero value means
-//   `LT_TIMING`.
+//   `LT_TIMING`. Its `no_proxy` is the list of hosts that bypass a proxy.
 //
 // `run` only reads it; its strings belong to the caller.
 Run_Env :: struct {
@@ -86,6 +86,10 @@ Run_Env :: struct {
 // `allocator`; free with `run_env_destroy`.
 run_env_from_os :: proc(allocator := context.allocator) -> Run_Env {
 	_, no_color := os.lookup_env("NO_COLOR", context.temp_allocator)
+	_, no_proxy_lower := os.lookup_env("no_proxy", context.temp_allocator)
+	_, no_proxy_upper := os.lookup_env("NO_PROXY", context.temp_allocator)
+	timing := LT_TIMING
+	timing.no_proxy = loopback_no_proxy(no_proxy_lower || no_proxy_upper)
 	return Run_Env {
 		lt = env_from_os(allocator),
 		config_dir = config_dir(allocator),
@@ -95,7 +99,7 @@ run_env_from_os :: proc(allocator := context.allocator) -> Run_Env {
 		stdin_is_terminal = os.is_tty(os.stdin),
 		hunspell_command = strings.clone(hunspell_program(), allocator),
 		rbw = rbw_lookup,
-		lt_timing = LT_TIMING,
+		lt_timing = timing,
 	}
 }
 
@@ -379,6 +383,9 @@ check_sources :: proc(a: Cli_Args, stdin: io.Reader, stdout, stderr: io.Writer, 
 	for src in sources {
 		r, cerr := check_text_timed(src.text, opts, timing)
 		if cerr.message != "" {
+			// What was reported so far must reach stdout before the error
+			// reaches stderr, or a terminal shows the error first.
+			_ = io.flush(stdout)
 			fmt.wprintf(stderr, "prose: LanguageTool %s; the check stops rather than use another backend\n", cerr.message)
 			delete(cerr.message)
 			return 2
@@ -539,6 +546,29 @@ selftest_heading :: proc(w: io.Writer, name: string, color: bool) {
 	_, _ = io.write_string(w, "\n")
 }
 
+// What `remembering_rbw` keeps: the first answer of the real lookup.
+@(private = "file")
+Remembered_Rbw :: struct {
+	inner: proc(item: string) -> (string, bool),
+	asked: bool,
+	item:  string,
+	key:   string,
+	ok:    bool,
+}
+
+// remembering_rbw is a `Key_Lookup.rbw` that asks `Remembered_Rbw.inner`, in
+// `context.user_ptr`, the first time only and answers the same afterwards. A
+// lookup has no room for state of its own, so the state comes in the context.
+@(private = "file")
+remembering_rbw :: proc(item: string) -> (string, bool) {
+	r := (^Remembered_Rbw)(context.user_ptr)
+	if !r.asked || r.item != item {
+		r.key, r.ok = r.inner(item)
+		r.item, r.asked = item, true
+	}
+	return r.key, r.ok
+}
+
 // selftest is --selftest: the settings file, the backend and where its
 // values came from, the key by length only, the dictionary files, and a
 // probe of the backend. Exit 2 when the settings file is unusable, the
@@ -583,8 +613,15 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	selftest_heading(w, "Backend", color)
 	cred := config_file_in(env.config_dir, "credentials")
 	defer delete(cred)
+	// The rbw agent is asked once however often the key is looked for: the
+	// backend is chosen with the key, and a refused Premium setup describes
+	// the key again below.
+	remembered := Remembered_Rbw {
+		inner = env.rbw,
+	}
+	context.user_ptr = &remembered
 	lookup := Key_Lookup {
-		rbw              = env.rbw,
+		rbw              = remembering_rbw if env.rbw != nil else nil,
 		credentials_path = cred,
 	}
 	b, problem := choose_backend(s, env.lt, lookup)
@@ -680,7 +717,7 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 		return 0
 	}
 	timing := env.lt_timing if env.lt_timing != {} else LT_TIMING
-	ok, detail := probe(b, timing)
+	ok, detail, _ := probe(b, timing)
 	defer delete(detail)
 	_, _ = io.write_string(w, "  ")
 	paint(w, "PASS" if ok else "FAIL", .Note if ok else .Error, color)

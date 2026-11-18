@@ -21,10 +21,16 @@ MAX_CHUNK :: 18000
 // reference waits 30 s for a check and 12 s for the probe, and retries a
 // rate limit, a server error or a lost connection twice, pausing 2 s and
 // then 4 s (`retry_pause_ms` times the attempt).
+//
+// `no_proxy` is not a timing, but it travels with it from the command line
+// to the request: the hosts that bypass a proxy, as libcurl's NOPROXY takes
+// them; "" leaves it to the `no_proxy` variable. `main` fills it in from the
+// process environment.
 Lt_Timing :: struct {
 	request_s, probe_s: int,
 	retries:            int,
 	retry_pause_ms:     int,
+	no_proxy:           string,
 }
 
 LT_TIMING :: Lt_Timing {
@@ -119,10 +125,10 @@ run_languagetool_timed :: proc(
 		return
 	}
 
-	ok, detail := probe(backend, timing, allocator)
+	ok, detail, fail := probe(backend, timing, allocator)
 	defer delete(detail, allocator)
 	if !ok {
-		return findings, "", Lt_Error{probe_failure(backend, detail, allocator)}
+		return findings, "", Lt_Error{probe_failure(backend, detail, fail, allocator)}
 	}
 	nb := strings.builder_make(allocator)
 	fmt.sbprintf(&nb, "%s: %s", backend.label, detail)
@@ -311,7 +317,7 @@ check_chunk :: proc(
 		{"disabledRules", LT_DISABLED_RULES},
 		{"level", "picky" if picky else "default"},
 	}
-	res, why := lt_post(backend, fields[:], timing.request_s, timing, allocator)
+	res, why, _ := lt_post(backend, fields[:], timing.request_s, timing, allocator)
 	defer json.destroy_value(res, allocator)
 	defer delete(why, allocator)
 	matches, is_list := jv_field(res, "matches").(json.Array)
@@ -512,17 +518,30 @@ cut_runes :: proc(s: string, n: int) -> string {
 // Talking to the backend
 // ---------------------------------------------------------------------------
 
+// How a request to the backend failed, for the words of a message.
+Lt_Fail :: enum {
+	None,
+	// A status that is not 2xx: `why` is "HTTP 403".
+	Status,
+	// No connection, a timeout, or a libcurl that could not send it.
+	Unreachable,
+	// An answer arrived and it is no answer to a check: too big, not JSON,
+	// not an object.
+	Bad_Answer,
+}
+
 // lt_post POSTs `fields` to the backend's /v2/check and parses the answer,
 // as the reference's `lt_post` does: with the account and the key added for
 // Premium, and a rate limit (429), a server error (500, 502, 503, 504), a
 // timeout or a lost connection retried `timing.retries` times, pausing
 // longer each time. A retried 429 is invisible; an unretried one would
-// silently remove findings.
+// silently remove findings. What a retry cannot fix (an answer over the size
+// cap, a refused option, a certificate that does not verify) is not retried.
 //
 // `why` is "" on success, else what went wrong: `HTTP 403` for a status
 // that is not 2xx, the transport's message, or that the answer is not
-// JSON. `value` and `why` are allocated with `allocator`; free them with
-// `json.destroy_value` and `delete`.
+// JSON; `fail` classes it. `value` and `why` are allocated with
+// `allocator`; free them with `json.destroy_value` and `delete`.
 @(private = "file")
 lt_post :: proc(
 	backend: Backend,
@@ -533,6 +552,7 @@ lt_post :: proc(
 ) -> (
 	value: json.Value,
 	why: string,
+	fail: Lt_Fail,
 ) {
 	all := make([dynamic][2]string, allocator)
 	defer delete(all)
@@ -544,14 +564,16 @@ lt_post :: proc(
 	defer delete(url, allocator)
 
 	for attempt := 0; ; attempt += 1 {
-		status, body, err := post_form(url, all[:], timeout_s, allocator)
+		status, body, err := post_form(url, all[:], timeout_s, Http_Options{no_proxy = timing.no_proxy}, allocator)
 		defer delete(body, allocator)
 		retry := false
 		if err.message != "" {
 			why = err.message
-			retry = true
+			retry = err.retryable
+			fail = .Bad_Answer if err.kind == .Bad_Answer else .Unreachable
 		} else if status < 200 || status > 299 {
 			why = fmt.aprintf("HTTP %d", status, allocator = allocator)
+			fail = .Status
 			switch status {
 			case 429, 500, 502, 503, 504:
 				retry = true
@@ -560,16 +582,16 @@ lt_post :: proc(
 			v, perr := json.parse_string(body, .JSON, true, allocator)
 			if perr != .None {
 				json.destroy_value(v, allocator)
-				return nil, strings.clone("the answer is not JSON", allocator)
+				return nil, strings.clone("the answer is not JSON", allocator), .Bad_Answer
 			}
 			if _, is_obj := v.(json.Object); !is_obj {
 				json.destroy_value(v, allocator)
-				return nil, strings.clone("the answer is not a JSON object", allocator)
+				return nil, strings.clone("the answer is not a JSON object", allocator), .Bad_Answer
 			}
-			return v, ""
+			return v, "", .None
 		}
 		if !retry || attempt >= timing.retries {
-			return nil, why
+			return nil, why, fail
 		}
 		delete(why, allocator)
 		why = ""
@@ -579,44 +601,52 @@ lt_post :: proc(
 
 // probe sends the reference's probe sentence. On success `detail` is the
 // reference's "ok, N match(es) on the probe sentence, LanguageTool
-// VERSION, TIER", where the tier is "premium rules active" unless the
-// answer carries a `premiumHint`: `software.premium` only says what the
-// build can do. On failure `detail` says why. Allocated with `allocator`.
-// `--selftest` calls it too.
+// VERSION, TIER", where the tier is "premium rules active" when the answer
+// says `software.premium` and carries no `premiumHint`, and "free rules only"
+// otherwise: a self-hosted open-source server says premium false. On failure
+// `detail` says why and `fail` how: a status, no answer at all, or an answer
+// that is not a check. Allocated with `allocator`. `--selftest` calls it too.
 @(private)
-probe :: proc(backend: Backend, timing: Lt_Timing, allocator := context.allocator) -> (ok: bool, detail: string) {
+probe :: proc(backend: Backend, timing: Lt_Timing, allocator := context.allocator) -> (ok: bool, detail: string, fail: Lt_Fail) {
 	fields := [?][2]string{{"text", LT_PROBE_TEXT}, {"language", "en-US"}}
-	res, why := lt_post(backend, fields[:], timing.probe_s, timing, allocator)
+	res, why, post_fail := lt_post(backend, fields[:], timing.probe_s, timing, allocator)
 	defer json.destroy_value(res, allocator)
 	if why != "" {
-		return false, why
+		return false, why, post_fail
 	}
 	list, is_list := jv_field(res, "matches").(json.Array)
 	if !is_list {
-		return false, strings.clone("the answer has no matches list", allocator)
+		return false, strings.clone("the answer has no matches list", allocator), .Bad_Answer
 	}
 	n := len(list)
 	if n == 0 {
 		// LanguageTool always flags the probe sentence, so an empty list means
 		// the server is not checking.
-		return false, strings.clone("the answer has no matches on the probe sentence, so the server is not checking", allocator)
+		return false, strings.clone("the answer has no matches on the probe sentence", allocator), .Bad_Answer
 	}
 	software := jv_field(res, "software")
-	tier := "free rules only" if jv_truthy(jv_field(software, "premiumHint")) else "premium rules active"
+	premium := jv_truthy(jv_field(software, "premium")) && !jv_truthy(jv_field(software, "premiumHint"))
+	tier := "premium rules active" if premium else "free rules only"
 	version := jv_str(jv_field(software, "version"), "?")
-	return true, fmt.aprintf("ok, %d match(es) on the probe sentence, LanguageTool %s, %s", n, version, tier, allocator = allocator)
+	return true, fmt.aprintf("ok, %d match(es) on the probe sentence, LanguageTool %s, %s", n, version, tier, allocator = allocator), .None
 }
 
 // probe_failure is the reference's one line for a backend that did not
-// answer the probe: its label, its URL, and the HTTP status or why not.
+// answer the probe: its label, its URL, and the HTTP status or why not. A
+// backend that answered with something that is no check says so, rather
+// than that it is unreachable.
 @(private = "file")
-probe_failure :: proc(backend: Backend, detail: string, allocator := context.allocator) -> string {
+probe_failure :: proc(backend: Backend, detail: string, fail: Lt_Fail, allocator := context.allocator) -> string {
 	fields := strings.fields(detail, allocator)
 	defer delete(fields, allocator)
 	first := strings.join(fields, " ", allocator)
 	defer delete(first, allocator)
-	if strings.has_prefix(first, "HTTP ") {
+	switch fail {
+	case .Status:
 		return fmt.aprintf("%s (%s) answered %s", backend.label, backend.url, first, allocator = allocator)
+	case .Bad_Answer:
+		return fmt.aprintf("%s (%s) answered but is not checking: %s", backend.label, backend.url, cut_runes(first, 120), allocator = allocator)
+	case .Unreachable, .None:
 	}
 	return fmt.aprintf("%s (%s) is unreachable: %s", backend.label, backend.url, cut_runes(first, 120), allocator = allocator)
 }

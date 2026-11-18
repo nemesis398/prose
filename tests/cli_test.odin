@@ -1,8 +1,11 @@
 package prose_tests
 
+import "core:bufio"
 import "core:fmt"
+import "core:io"
 import "core:os"
 import "core:strings"
+import "core:sync"
 import "core:testing"
 import prose "../src"
 
@@ -382,7 +385,7 @@ selftest_with_nothing_set_up :: proc(t: ^testing.T) {
 selftest_probes_the_backend :: proc(t: ^testing.T) {
 	for mode in ([]Fake_Mode{.Replay, .Refuse_403}) {
 		fake, port := fake_lt_start(RECORDINGS, mode)
-		defer fake_lt_stop(fake)
+		defer fake_lt_stop(t, fake)
 		if !testing.expect(t, fake != nil) {
 			return
 		}
@@ -428,7 +431,7 @@ selftest_probes_the_backend :: proc(t: ^testing.T) {
 @(test)
 selftest_names_the_variable_that_chose :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -585,7 +588,7 @@ a_file_that_is_not_utf8_is_exit_2 :: proc(t: ^testing.T) {
 @(test)
 a_server_backend_gives_the_golden_lt_output :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -624,7 +627,7 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 	path := CORPUS + "fixture.md"
 	for mode in ([]Fake_Mode{.No_Matches, .Empty_Matches}) {
 		fake, port := fake_lt_start(RECORDINGS, mode)
-		defer fake_lt_stop(fake)
+		defer fake_lt_stop(t, fake)
 		if !testing.expect(t, fake != nil) {
 			return
 		}
@@ -635,7 +638,14 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 		c := cli({path}, env)
 		defer cli_done(&c)
 		testing.expectf(t, c.code == 2, "%v: exit %d, out %q", mode, c.code, c.out)
-		testing.expectf(t, strings.contains(c.err, "self-hosted"), "%v: stderr %q", mode, c.err)
+		why := "the answer has no matches list" if mode == .No_Matches else "the answer has no matches on the probe sentence"
+		want := fmt.aprintf(
+			"prose: LanguageTool self-hosted (%s) answered but is not checking: %s; the check stops rather than use another backend\n",
+			url,
+			why,
+		)
+		defer delete(want)
+		testing.expect_value(t, c.err, want)
 		testing.expect_value(t, c.out, "")
 
 		s := cli({"--selftest"}, env)
@@ -645,7 +655,7 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 	}
 
 	fake, port := fake_lt_start(RECORDINGS, .No_Matches_After_Probe)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -663,7 +673,7 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 @(test)
 no_prose_sends_nothing :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -691,7 +701,7 @@ no_prose_sends_nothing :: proc(t: ^testing.T) {
 @(test)
 a_refusing_backend_is_exit_2 :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Refuse_403)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -734,4 +744,158 @@ backend_none_says_languagetool_is_off :: proc(t: ^testing.T) {
 	n := cli({"--json", "--stdin", "--no-lt"}, {}, text)
 	defer cli_done(&n)
 	testing.expect(t, strings.contains(n.out, `"note": "language: en",`))
+}
+
+// The second of long.md's three chunks fails: the run exits 1, the report
+// names the failed chunk and the note says so, and the other chunks' findings
+// are in the report, fewer only by the failed chunk's own.
+@(test)
+a_failed_chunk_is_exit_1_and_the_others_are_checked :: proc(t: ^testing.T) {
+	path := CORPUS + "long.md"
+	// Retries pause 10 ms instead of 2 s.
+	timing := prose.Lt_Timing{request_s = 30, probe_s = 12, retries = 2, retry_pause_ms = 10}
+
+	full_fake, full_port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, full_fake)
+	fake, port := fake_lt_start(RECORDINGS, .Fail_Second_Chunk)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil && full_fake != nil) {
+		return
+	}
+	full_url := fmt.aprintf("http://127.0.0.1:%d", full_port)
+	defer delete(full_url)
+	url := fmt.aprintf("http://127.0.0.1:%d", port)
+	defer delete(url)
+
+	full := cli({path}, prose.Run_Env{lt = {server = full_url}, skill_dir = SKILL, lt_timing = timing})
+	defer cli_done(&full)
+	c := cli({path}, prose.Run_Env{lt = {server = url}, skill_dir = SKILL, lt_timing = timing})
+	defer cli_done(&c)
+
+	testing.expect_value(t, c.code, 1)
+	testing.expect_value(t, c.err, "")
+	testing.expectf(t, strings.contains(c.out, "LT-CHUNK-FAILED"), "%s", c.out)
+	testing.expectf(t, strings.contains(c.out, "chunk failed: HTTP 500"), "%s", c.out)
+	testing.expectf(t, strings.contains(c.out, " were never checked: HTTP 500."), "%s", c.out)
+	// The probe, three chunks, and two retries of the second.
+	testing.expect_value(t, fake_lt_requests(fake), 6)
+
+	lt_findings :: proc(report: string) -> int {
+		n := 0
+		rest := report
+		for line in strings.split_lines_iterator(&rest) {
+			if strings.contains(line, "  LT:") {
+				n += 1
+			}
+		}
+		return n
+	}
+	all, kept := lt_findings(full.out), lt_findings(c.out)
+	testing.expectf(t, kept > 0 && kept < all, "%d LanguageTool findings with a failed chunk, %d without", kept, all)
+	testing.expect(t, !strings.contains(full.out, "LT-CHUNK-FAILED"))
+}
+
+// A stream that logs which writer wrote, in the order of the writes that
+// reached it.
+@(private = "file")
+Log_Sink :: struct {
+	log:  ^[dynamic]string,
+	name: string,
+}
+
+@(private = "file")
+log_sink_proc :: proc(data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+	sink := (^Log_Sink)(data)
+	#partial switch mode {
+	case .Write:
+		append(sink.log, sink.name)
+		return i64(len(p)), nil
+	case .Query:
+		return io.query_utility({.Write, .Query})
+	}
+	return 0, .Empty
+}
+
+// On the exit-2 path the error must not overtake the reports that came
+// before it: stdout is buffered as in `main`, and the run flushes it before it
+// writes to stderr. The first file is clean and reported; the second one
+// meets a backend that refuses.
+@(test)
+stdout_is_flushed_before_the_error_on_exit_2 :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Refuse_403)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d", port)
+	defer delete(url)
+
+	log := make([dynamic]string)
+	defer delete(log)
+	out_sink := Log_Sink{&log, "out"}
+	err_sink := Log_Sink{&log, "err"}
+	out: bufio.Writer
+	bufio.writer_init(&out, io.Writer{procedure = log_sink_proc, data = &out_sink})
+	defer bufio.writer_destroy(&out)
+	// The buffer is far bigger than the report, as `main`'s is.
+	r: strings.Reader
+	code := prose.run(
+		{CORPUS + "empty.md", CORPUS + "fixture.md"},
+		strings.to_reader(&r, ""),
+		bufio.writer_to_writer(&out),
+		io.Writer{procedure = log_sink_proc, data = &err_sink},
+		prose.Run_Env{lt = {server = url}, skill_dir = SKILL, hunspell_command = NO_HUNSPELL},
+	)
+	testing.expect_value(t, code, 2)
+	first_out, first_err := -1, -1
+	for who, i in log {
+		if who == "out" && first_out < 0 {
+			first_out = i
+		}
+		if who == "err" && first_err < 0 {
+			first_err = i
+		}
+	}
+	testing.expectf(t, first_err >= 0, "nothing reached stderr: %v", log)
+	testing.expectf(t, first_out >= 0 && first_out < first_err, "stderr came before the report reached stdout: %v", log)
+}
+
+// How often the counting stand-in for rbw was asked.
+@(private = "file")
+rbw_calls: int
+
+@(private = "file")
+counting_rbw :: proc(item: string) -> (string, bool) {
+	sync.atomic_add(&rbw_calls, 1)
+	if item == "lt key" {
+		return "KEY-FROM-RBW", true
+	}
+	return "", false
+}
+
+// --selftest on a Premium setup that is refused (no account) looks the key up
+// once, not once to choose the backend and again to describe the key.
+@(test)
+selftest_asks_rbw_once_when_premium_is_refused :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	delete(put(t, dir, "config.json", transmute([]byte)string(`{"languagetool": {"backend": "premium", "keyItem": "lt key"}}`)))
+	before := sync.atomic_load(&rbw_calls)
+	c := cli({"--selftest"}, {config_dir = dir, rbw = counting_rbw})
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	testing.expect_value(t, sync.atomic_load(&rbw_calls) - before, 1)
+	testing.expectf(t, strings.contains(c.out, "  api key       : set, 12 chars, from the rbw item \"lt key\"\n"), "%s", c.out)
+	testing.expectf(t, strings.contains(c.out, "needs the account"), "%s", c.out)
+	testing.expect(t, !strings.contains(c.out, "KEY-FROM-RBW"))
+
+	// No key anywhere: still one lookup, and the problem names the sources.
+	delete(put(t, dir, "config.json", transmute([]byte)string(`{"languagetool": {"backend": "premium", "username": "u", "keyItem": "other"}}`)))
+	before = sync.atomic_load(&rbw_calls)
+	n := cli({"--selftest"}, {config_dir = dir, rbw = counting_rbw})
+	defer cli_done(&n)
+	testing.expect_value(t, n.code, 2)
+	testing.expect_value(t, sync.atomic_load(&rbw_calls) - before, 1)
+	testing.expectf(t, strings.contains(n.out, "LanguageTool Premium has no key"), "%s", n.out)
+	free_all(context.temp_allocator)
 }

@@ -113,7 +113,7 @@ post_form_refuses_other_schemes :: proc(t: ^testing.T) {
 @(test)
 the_fake_answers_404_without_a_recording :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -138,7 +138,7 @@ the_fake_answers_404_without_a_recording :: proc(t: ^testing.T) {
 @(test)
 post_form_sends_an_empty_form_as_an_empty_body :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -232,7 +232,7 @@ load_golden :: proc(t: ^testing.T, path: string) -> (note: string, want: []prose
 @(test)
 languagetool_matches_the_golden_files :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -323,7 +323,7 @@ golden_lt_matches :: proc(
 @(test)
 a_refusing_backend_stops_the_check :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Refuse_403)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -349,7 +349,7 @@ a_refusing_backend_stops_the_check :: proc(t: ^testing.T) {
 a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
 	for mode in ([]Fake_Mode{.No_Matches, .Empty_Matches}) {
 		fake, port := fake_lt_start(RECORDINGS, mode)
-		defer fake_lt_stop(fake)
+		defer fake_lt_stop(t, fake)
 		if !testing.expect(t, fake != nil) {
 			return
 		}
@@ -361,8 +361,10 @@ a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
 		defer prose.file_result_destroy(&result)
 		defer delete(err.message)
 		testing.expectf(t, err.message != "", "%v: the probe passed, note %q", mode, result.note)
-		testing.expectf(t, strings.has_prefix(err.message, "self-hosted ("), "%v: error %q", mode, err.message)
-		testing.expectf(t, strings.contains(err.message, "matches"), "%v: error %q", mode, err.message)
+		prefix := fmt.aprintf("self-hosted (%s) answered but is not checking: the answer has no matches", backend.url)
+		defer delete(prefix)
+		testing.expectf(t, strings.has_prefix(err.message, prefix), "%v: error %q", mode, err.message)
+		testing.expectf(t, !strings.contains(err.message, "unreachable"), "%v: error %q", mode, err.message)
 		testing.expect_value(t, result.note, "")
 		testing.expect_value(t, len(result.findings), 0)
 		testing.expect_value(t, fake_lt_requests(fake), 1)
@@ -374,7 +376,7 @@ a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
 @(test)
 a_chunk_answer_without_matches_is_a_failed_chunk :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .No_Matches_After_Probe)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -405,7 +407,7 @@ a_chunk_answer_without_matches_is_a_failed_chunk :: proc(t: ^testing.T) {
 @(test)
 a_hanging_backend_times_out :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Hang)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -439,7 +441,7 @@ a_hanging_backend_times_out :: proc(t: ^testing.T) {
 @(test)
 a_failed_chunk_is_an_error_and_the_rest_still_counts :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Fail_Second_Chunk)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -483,11 +485,10 @@ a_failed_chunk_is_an_error_and_the_rest_still_counts :: proc(t: ^testing.T) {
 	testing.expect_value(t, f.excerpt, "")
 	testing.expect_value(t, f.suggestion, "re-run, and if it repeats use --no-lt knowingly rather than trusting a partial pass")
 	// "Lines A to B were never checked: HTTP 500. This run is incomplete, ..."
-	rest := strings.trim_prefix(f.message, "Lines ")
-	a_end := strings.index_byte(rest, ' ')
-	first, _ := strconv.parse_int(rest[:max(a_end, 0)])
-	rest = rest[a_end + len(" to "):]
-	last, _ := strconv.parse_int(rest[:strings.index_byte(rest, ' ')])
+	first, last, shaped := failed_lines(f.message)
+	if !testing.expectf(t, shaped, "the message is not 'Lines A to B were never checked: ...': %q", f.message) {
+		return
+	}
 	testing.expect_value(t, first, f.line)
 	testing.expectf(t, first > 1 && last > first, "lines %d to %d", first, last)
 	testing.expect(t, strings.has_suffix(f.message, " were never checked: HTTP 500. This run is incomplete, so a clean result here would be misleading."), f.message)
@@ -520,14 +521,37 @@ a_failed_chunk_is_an_error_and_the_rest_still_counts :: proc(t: ^testing.T) {
 			testing.expectf(t, g.line <= first || g.line >= last, "a finding from the failed chunk: %v", g)
 		}
 	}
-	testing.expectf(t, i == len(expected), "only %d of %d expected findings, in order; next %v", i, len(expected), expected[min(i, len(expected) - 1)])
+	testing.expectf(t, i == len(expected), "only %d of %d expected findings, in order", i, len(expected))
+}
+
+// failed_lines reads A and B out of "Lines A to B were never checked: ...".
+// False for any other shape, so a reworded message fails the test instead of
+// slicing out of range.
+@(private = "file")
+failed_lines :: proc(message: string) -> (first, last: int, ok: bool) {
+	rest := strings.trim_prefix(message, "Lines ")
+	if len(rest) == len(message) {
+		return
+	}
+	to := strings.index(rest, " to ")
+	if to < 0 {
+		return
+	}
+	first = strconv.parse_int(rest[:to]) or_return
+	rest = rest[to + len(" to "):]
+	space := strings.index_byte(rest, ' ')
+	if space < 0 {
+		return
+	}
+	last = strconv.parse_int(rest[:space]) or_return
+	return first, last, true
 }
 
 // No backend sends nothing: not the probe, not a chunk.
 @(test)
 no_backend_sends_nothing :: proc(t: ^testing.T) {
 	fake, _ := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -586,4 +610,216 @@ chunk_annotations_split_at_the_limit :: proc(t: ^testing.T) {
 	empty := prose.chunk_annotations({}, 0, 10)
 	defer delete(empty)
 	testing.expect_value(t, len(empty), 0)
+}
+
+// The tier in the probe's note comes from `software.premium`: a self-hosted
+// open-source server says false and has free rules only, as does one that
+// sets `premiumHint` even when it says premium.
+@(test)
+the_probe_names_the_tier_from_software_premium :: proc(t: ^testing.T) {
+	for mode in ([]Fake_Mode{.Probe_Free, .Probe_Premium_Hint}) {
+		fake, port := fake_lt_start(RECORDINGS, mode)
+		defer fake_lt_stop(t, fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		backend := server_backend(port)
+		defer delete(backend.url)
+		result, err := prose.check_text("A short sentence.\n", {lang = "en", use_lt = true, backend = backend})
+		defer prose.file_result_destroy(&result)
+		defer delete(err.message)
+		testing.expect_value(t, err.message, "")
+		testing.expect_value(
+			t,
+			result.note,
+			"language: en | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.5, free rules only",
+		)
+	}
+}
+
+// An answer over the size cap cannot shrink on a second try: one request,
+// no retries, and the check stops naming the backend.
+@(test)
+an_answer_over_the_size_cap_is_not_retried :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Too_Big_Answer)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	backend := server_backend(port)
+	defer delete(backend.url)
+	md := read_corpus("fixture.md")
+	defer delete(md)
+	timing := prose.LT_TIMING
+	timing.retry_pause_ms = 10
+	result, err := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = backend}, timing)
+	defer prose.file_result_destroy(&result)
+	defer delete(err.message)
+	want := fmt.aprintf("self-hosted (%s) answered but is not checking: the answer is too big", backend.url)
+	defer delete(want)
+	testing.expect_value(t, err.message, want)
+	testing.expect_value(t, fake_lt_requests(fake), 1)
+}
+
+// A 429 is retried and the retry is invisible: the same note and findings as
+// without it, one request more.
+@(test)
+a_rate_limited_request_is_retried :: proc(t: ^testing.T) {
+	steady, steady_port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, steady)
+	limited, limited_port := fake_lt_start(RECORDINGS, .Rate_Limit_First)
+	defer fake_lt_stop(t, limited)
+	if !testing.expect(t, steady != nil && limited != nil) {
+		return
+	}
+	md := read_corpus("fixture.md")
+	defer delete(md)
+	words := golden_words()
+	defer prose.word_set_destroy(&words)
+	timing := prose.LT_TIMING
+	timing.retry_pause_ms = 10
+
+	a := server_backend(steady_port)
+	defer delete(a.url)
+	b := server_backend(limited_port)
+	defer delete(b.url)
+	want, werr := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = a, words = words}, timing)
+	defer prose.file_result_destroy(&want)
+	defer delete(werr.message)
+	got, gerr := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = b, words = words}, timing)
+	defer prose.file_result_destroy(&got)
+	defer delete(gerr.message)
+	testing.expect_value(t, werr.message, "")
+	testing.expect_value(t, gerr.message, "")
+	testing.expect_value(t, got.note, want.note)
+	expect_findings(t, "after a 429", 0, got.findings, want.findings)
+	testing.expect_value(t, fake_lt_requests(limited), fake_lt_requests(steady) + 1)
+}
+
+// The account and the key travel as form fields to the Premium backend, and
+// show up in no message and no note, whatever goes wrong.
+@(test)
+premium_credentials_are_sent_and_never_shown :: proc(t: ^testing.T) {
+	USER :: "account-name-7"
+	KEY :: "S3CRET-key-8"
+	for mode in ([]Fake_Mode{.Replay, .Refuse_403, .No_Matches_After_Probe, .Fail_Second_Chunk}) {
+		fake, port := fake_lt_start(RECORDINGS, mode)
+		defer fake_lt_stop(t, fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		backend := prose.Backend {
+			kind     = .Premium,
+			url      = fmt.aprintf("http://127.0.0.1:%d", port),
+			username = USER,
+			key      = KEY,
+			label    = "premium cloud",
+		}
+		defer delete(backend.url)
+		md := read_corpus("fixture.md")
+		defer delete(md)
+		timing := prose.LT_TIMING
+		timing.retry_pause_ms = 10
+		result, err := prose.check_text_timed(md, {lang = "auto", use_lt = true, backend = backend}, timing)
+		defer prose.file_result_destroy(&result)
+		defer delete(err.message)
+
+		sent := fake_lt_requests(fake)
+		testing.expectf(t, sent > 0, "%v: no request", mode)
+		testing.expectf(t, fake_lt_requests_with_field(fake, "username", USER) == sent, "%v: not every request carries the account", mode)
+		testing.expectf(t, fake_lt_requests_with_field(fake, "apiKey", KEY) == sent, "%v: not every request carries the key", mode)
+
+		shown := make([dynamic]string)
+		defer delete(shown)
+		append(&shown, err.message, result.note)
+		for f in result.findings {
+			append(&shown, f.message, f.excerpt, f.suggestion, f.rule)
+		}
+		for text in shown {
+			testing.expectf(t, !strings.contains(text, KEY) && !strings.contains(text, "apiKey"), "%v: the key shows in %q", mode, text)
+			testing.expectf(t, !strings.contains(text, USER), "%v: the account shows in %q", mode, text)
+		}
+	}
+}
+
+// A timeout that libcurl refuses is an error, not a request without a
+// timeout: nothing is sent.
+@(test)
+post_form_stops_when_libcurl_refuses_an_option :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d/v2/check", port)
+	defer delete(url)
+	// A negative timeout is out of range for CURLOPT_TIMEOUT.
+	status, body, herr := prose.post_form(url, {{"text", "x"}}, -1)
+	defer delete(body)
+	defer delete(herr.message)
+	testing.expect_value(t, status, 0)
+	testing.expectf(t, strings.contains(herr.message, "TIMEOUT"), "error %q", herr.message)
+	testing.expect_value(t, herr.retryable, false)
+	testing.expect_value(t, fake_lt_requests(fake), 0)
+}
+
+// Loopback does not go through a proxy unless the user's no_proxy says so:
+// with the bypass the request reaches the server, without it the proxy.
+@(test)
+loopback_bypasses_a_proxy :: proc(t: ^testing.T) {
+	target, target_port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, target)
+	proxy, proxy_port := fake_lt_start(RECORDINGS, .Refuse_403)
+	defer fake_lt_stop(t, proxy)
+	if !testing.expect(t, target != nil && proxy != nil) {
+		return
+	}
+	url := fmt.aprintf("http://127.0.0.1:%d/v2/check", target_port)
+	defer delete(url)
+	proxy_url := fmt.aprintf("http://127.0.0.1:%d", proxy_port)
+	defer delete(proxy_url)
+	fields := [][2]string{{"text", "This are a test."}, {"language", "en-US"}}
+
+	status, body, herr := prose.post_form(url, fields, 5, {proxy = proxy_url, no_proxy = prose.loopback_no_proxy(false)})
+	delete(body)
+	delete(herr.message)
+	testing.expect_value(t, status, 200)
+	testing.expect_value(t, fake_lt_requests(target), 1)
+	testing.expect_value(t, fake_lt_requests(proxy), 0)
+
+	// The premise: without the bypass the same request goes to the proxy.
+	status, body, herr = prose.post_form(url, fields, 5, {proxy = proxy_url})
+	delete(body)
+	delete(herr.message)
+	testing.expect_value(t, fake_lt_requests(target), 1)
+	testing.expect_value(t, fake_lt_requests(proxy), 1)
+}
+
+// The user's own no_proxy wins: the bypass list is empty then, so that
+// libcurl reads the variable.
+@(test)
+the_loopback_bypass_yields_to_the_users_no_proxy :: proc(t: ^testing.T) {
+	testing.expect_value(t, prose.loopback_no_proxy(true), "")
+	got := prose.loopback_no_proxy(false)
+	for host in ([]string{"localhost", "127.0.0.1", "::1"}) {
+		testing.expectf(t, strings.contains(got, host), "%q lacks %s", got, host)
+	}
+}
+
+// The fake's accept loop dying of an error nobody asked for is reported at
+// stop, and stopping does not hang. Linux only: shutdown on a listening
+// socket is what makes accept fail there.
+@(test)
+the_fake_reports_an_accept_error_and_still_stops :: proc(t: ^testing.T) {
+	when ODIN_OS == .Linux {
+		fake, _ := fake_lt_start(RECORDINGS, .Replay)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		testing.expect(t, net.shutdown(fake.listener, .Both) == nil)
+		time.sleep(200 * time.Millisecond)
+		failure := fake_lt_shutdown(fake)
+		defer delete(failure)
+		testing.expectf(t, strings.has_prefix(failure, "accept failed"), "failure %q", failure)
+	}
 }
