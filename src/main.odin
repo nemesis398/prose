@@ -680,7 +680,7 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 		return 0
 	}
 	timing := env.lt_timing if env.lt_timing != {} else LT_TIMING
-	ok, detail := probe(b, timing)
+	ok, detail, _ := probe(b, timing)
 	defer delete(detail)
 	_, _ = io.write_string(w, "  ")
 	paint(w, "PASS" if ok else "FAIL", .Note if ok else .Error, color)

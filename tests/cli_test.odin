@@ -635,7 +635,14 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 		c := cli({path}, env)
 		defer cli_done(&c)
 		testing.expectf(t, c.code == 2, "%v: exit %d, out %q", mode, c.code, c.out)
-		testing.expectf(t, strings.contains(c.err, "self-hosted"), "%v: stderr %q", mode, c.err)
+		why := "the answer has no matches list" if mode == .No_Matches else "the answer has no matches on the probe sentence"
+		want := fmt.aprintf(
+			"prose: LanguageTool self-hosted (%s) answered but is not checking: %s; the check stops rather than use another backend\n",
+			url,
+			why,
+		)
+		defer delete(want)
+		testing.expect_value(t, c.err, want)
 		testing.expect_value(t, c.out, "")
 
 		s := cli({"--selftest"}, env)

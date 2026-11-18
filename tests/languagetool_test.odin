@@ -361,8 +361,10 @@ a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
 		defer prose.file_result_destroy(&result)
 		defer delete(err.message)
 		testing.expectf(t, err.message != "", "%v: the probe passed, note %q", mode, result.note)
-		testing.expectf(t, strings.has_prefix(err.message, "self-hosted ("), "%v: error %q", mode, err.message)
-		testing.expectf(t, strings.contains(err.message, "matches"), "%v: error %q", mode, err.message)
+		prefix := fmt.aprintf("self-hosted (%s) answered but is not checking: the answer has no matches", backend.url)
+		defer delete(prefix)
+		testing.expectf(t, strings.has_prefix(err.message, prefix), "%v: error %q", mode, err.message)
+		testing.expectf(t, !strings.contains(err.message, "unreachable"), "%v: error %q", mode, err.message)
 		testing.expect_value(t, result.note, "")
 		testing.expect_value(t, len(result.findings), 0)
 		testing.expect_value(t, fake_lt_requests(fake), 1)
@@ -608,6 +610,31 @@ chunk_annotations_split_at_the_limit :: proc(t: ^testing.T) {
 	empty := prose.chunk_annotations({}, 0, 10)
 	defer delete(empty)
 	testing.expect_value(t, len(empty), 0)
+}
+
+// The tier in the probe's note comes from `software.premium`: a self-hosted
+// open-source server says false and has free rules only, as does one that
+// sets `premiumHint` even when it says premium.
+@(test)
+the_probe_names_the_tier_from_software_premium :: proc(t: ^testing.T) {
+	for mode in ([]Fake_Mode{.Probe_Free, .Probe_Premium_Hint}) {
+		fake, port := fake_lt_start(RECORDINGS, mode)
+		defer fake_lt_stop(t, fake)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		backend := server_backend(port)
+		defer delete(backend.url)
+		result, err := prose.check_text("A short sentence.\n", {lang = "en", use_lt = true, backend = backend})
+		defer prose.file_result_destroy(&result)
+		defer delete(err.message)
+		testing.expect_value(t, err.message, "")
+		testing.expect_value(
+			t,
+			result.note,
+			"language: en | self-hosted: ok, 1 match(es) on the probe sentence, LanguageTool 6.5, free rules only",
+		)
+	}
 }
 
 // The fake's accept loop dying of an error nobody asked for is reported at
