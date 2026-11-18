@@ -1,6 +1,7 @@
 package prose_tests
 
 import "core:fmt"
+import "core:io"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -972,6 +973,90 @@ values_stdin_needs_setup_and_setup_takes_no_files :: proc(t: ^testing.T) {
 	c2 := cli({"--setup", "--values-stdin", "some.md"}, dir, `{"languageRule": "R"}`)
 	defer cli_done(&c2)
 	testing.expect_value(t, c2.code, 2)
+	listing := names(dir)
+	defer delete(listing)
+	testing.expect_value(t, listing, "")
+}
+
+// --setup does one thing: every other option, and --values-stdin without
+// --setup, is refused before anything runs or is written.
+@(test)
+setup_takes_no_other_option_and_values_stdin_needs_setup :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	with_setup := [][]string {
+		{"--setup", "--rules"},
+		{"--setup", "--json"},
+		{"--setup", "--strict"},
+		{"--setup", "--no-lt"},
+		{"--setup", "--picky"},
+		{"--setup", "--lang", "de"},
+		{"--setup", "--lang=auto"},
+		{"--setup", "--values-stdin", "--rules"},
+		{"--setup", "--values-stdin", "--lang=en"},
+	}
+	for args in with_setup {
+		c := cli(args, dir, `{"languageRule": "R"}`)
+		defer cli_done(&c)
+		testing.expectf(t, c.code == 2, "%v: exit %d", args, c.code)
+		testing.expectf(t, strings.has_prefix(c.err, "prose: "), "%v: stderr %q", args, c.err)
+		expect_contains(t, c.err, "--setup takes no files and no other option")
+		testing.expectf(t, c.out == "", "%v: stdout %q", args, c.out)
+	}
+	c := cli({"--values-stdin", "--rules"}, dir, `{"languageRule": "R"}`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	testing.expect_value(t, c.err, "prose: --values-stdin goes with --setup\n")
+	testing.expect_value(t, c.out, "")
+	listing := names(dir)
+	defer delete(listing)
+	testing.expect_value(t, listing, "")
+}
+
+// A reader that fails.
+@(private = "file")
+broken_reader :: proc() -> io.Reader {
+	return io.Reader {
+		procedure = proc(
+			stream_data: rawptr,
+			mode: io.Stream_Mode,
+			p: []byte,
+			offset: i64,
+			whence: io.Seek_From,
+		) -> (
+			n: i64,
+			err: io.Error,
+		) {
+			if mode == .Query {
+				return io.query_utility({.Read, .Query})
+			}
+			return 0, .Unknown
+		},
+	}
+}
+
+@(test)
+standard_input_that_cannot_be_read_or_is_too_big_is_told_apart :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	env := prose.Run_Env {
+		config_dir = dir,
+	}
+	out := strings.builder_make()
+	defer strings.builder_destroy(&out)
+	errb := strings.builder_make()
+	defer strings.builder_destroy(&errb)
+	code := prose.run({"--setup", "--values-stdin"}, broken_reader(), strings.to_writer(&out), strings.to_writer(&errb), env)
+	testing.expect_value(t, code, 2)
+	testing.expect_value(t, strings.to_string(errb), "prose: cannot read the values on standard input\n")
+
+	big, _ := strings.repeat(" ", prose.MAX_SETTINGS_BYTES + 1)
+	defer delete(big)
+	c := values(dir, big)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 2)
+	want := fmt.tprintf("prose: the values on standard input are bigger than %d bytes\n", prose.MAX_SETTINGS_BYTES)
+	testing.expect_value(t, c.err, want)
 	listing := names(dir)
 	defer delete(listing)
 	testing.expect_value(t, listing, "")

@@ -147,6 +147,8 @@ Cli_Args :: struct {
 	setup, values_stdin:                                        bool,
 	help:                                                       bool,
 	lang:                                                       string,
+	// --lang was given, even as `auto`.
+	lang_given:                                                 bool,
 }
 
 // parse_args reads the arguments as the reference's argparse does for the
@@ -195,9 +197,11 @@ parse_args :: proc(args: []string) -> (a: Cli_Args, problem: string) {
 			}
 			i += 1
 			a.lang = args[i]
+			a.lang_given = true
 		case:
 			if strings.has_prefix(arg, "--lang=") {
 				a.lang = arg[len("--lang="):]
+				a.lang_given = true
 			} else {
 				return a, fmt.tprintf("unknown option %s", arg)
 			}
@@ -234,15 +238,21 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer, env: Ru
 		return 0
 	}
 	color := env.stdout_is_terminal && !env.no_color
-	if a.rules {
-		return print_rules(stdout, stderr, env)
-	}
+	// Before anything runs: --setup writes the settings file, so an option it
+	// would silently ignore is a mistake worth refusing.
 	if a.values_stdin && !a.setup {
 		fmt.wprintf(stderr, "prose: --values-stdin goes with --setup\n")
 		return 2
 	}
+	if a.setup && (a.rules || a.json || a.strict || a.lang_given || a.no_lt || a.picky) {
+		fmt.wprintf(stderr, "prose: --setup takes no files and no other option\n")
+		return 2
+	}
+	if a.rules {
+		return print_rules(stdout, stderr, env)
+	}
 	if a.setup {
-		if len(a.files) > 0 || a.stdin || a.selftest || a.rules {
+		if len(a.files) > 0 || a.stdin || a.selftest {
 			fmt.wprintf(stderr, "prose: --setup takes no files and no other action\n")
 			return 2
 		}
@@ -748,7 +758,12 @@ setup :: proc(values_stdin: bool, stdin: io.Reader, stdout, stderr: io.Writer, e
 	data, ok := read_all(stdin, MAX_SETTINGS_BYTES)
 	defer delete(data)
 	if !ok {
-		fmt.wprintf(stderr, "prose: cannot read the values on standard input (more than %d bytes?)\n", MAX_SETTINGS_BYTES)
+		// read_all hands the data back on failure: more than the limit is "too big".
+		if len(data) > MAX_SETTINGS_BYTES {
+			fmt.wprintf(stderr, "prose: the values on standard input are bigger than %d bytes\n", MAX_SETTINGS_BYTES)
+		} else {
+			fmt.wprintf(stderr, "prose: cannot read the values on standard input\n")
+		}
 		return 2
 	}
 	err := apply_values(path, string(data))
