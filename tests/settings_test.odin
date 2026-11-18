@@ -545,7 +545,7 @@ a_server_url_is_checked_wherever_it_comes_from :: proc(t: ^testing.T) {
 		backend = prose.Backend_Kind.Server,
 		server  = "https://file.example.org",
 	}
-	b, problem := choose(t, s, {server = "user:secret@lt.example.org"}, {})
+	b, problem := choose(t, s, {server = "ftp://user:secret@lt.example.org"}, {})
 	defer done(&b, problem)
 	testing.expect(t, b.kind == .None && b.url == "")
 	testing.expect(t, strings.contains(problem, "LANGUAGETOOL_SERVER"), problem)
@@ -571,9 +571,50 @@ a_server_url_is_checked_wherever_it_comes_from :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem4, "")
 	testing.expect_value(t, b4.url, "HTTPS://lt.example.org")
 	// The variable alone chooses the server backend, and is checked too.
-	b5, problem5 := choose(t, {}, {server = "lt.example.org"}, {})
+	b5, problem5 := choose(t, {}, {server = "file:///etc/passwd"}, {})
 	defer done(&b5, problem5)
 	testing.expect(t, strings.contains(problem5, "LANGUAGETOOL_SERVER"), problem5)
+}
+
+// v0.1.0 gave LANGUAGETOOL_SERVER to curl as it was, and curl reads
+// `localhost:8081` as http. So a variable without a scheme is http; the
+// file's value, which v0.1.0 refused, and any other scheme stay refused.
+@(test)
+a_server_variable_without_a_scheme_is_http :: proc(t: ^testing.T) {
+	b, problem := choose(t, {}, {server = "localhost:8081"}, {})
+	defer done(&b, problem)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, b.kind, prose.Backend_Kind.Server)
+	testing.expect_value(t, b.url, "http://localhost:8081")
+	testing.expect(t, b.assumed_http)
+	// With a login, and with the file naming the backend.
+	s := prose.Settings {
+		backend = prose.Backend_Kind.Server,
+	}
+	b2, problem2 := choose(t, s, {server = "user:pw@lt.example.org:8081"}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, problem2, "")
+	testing.expect_value(t, b2.url, "http://user:pw@lt.example.org:8081")
+	// A scheme given is not touched and nothing is assumed.
+	b3, problem3 := choose(t, {}, {server = "HTTPS://lt.example.org"}, {})
+	defer done(&b3, problem3)
+	testing.expect_value(t, b3.url, "HTTPS://lt.example.org")
+	testing.expect(t, !b3.assumed_http)
+	// Another scheme is still refused, with a place and no value.
+	for bad in ([?]string{"ftp://lt.example.org", "file:///etc/passwd", "gopher://x"}) {
+		b4, problem4 := choose(t, {}, {server = bad}, {})
+		defer done(&b4, problem4)
+		testing.expectf(t, b4.kind == .None && b4.url == "", "%q: %v %q", bad, b4.kind, b4.url)
+		testing.expectf(t, strings.contains(problem4, "LANGUAGETOOL_SERVER (environment variable) must start with http:// or https://"), "%q: %q", bad, problem4)
+	}
+	// The file's value is not helped: v0.1.0 refused it already.
+	bad_file := prose.Settings {
+		backend = prose.Backend_Kind.Server,
+		server  = "localhost:8081",
+	}
+	b5, problem5 := choose(t, bad_file, {}, {})
+	defer done(&b5, problem5)
+	testing.expect(t, strings.contains(problem5, "\"languagetool.server\""), problem5)
 }
 
 @(test)

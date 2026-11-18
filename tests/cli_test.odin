@@ -449,6 +449,31 @@ selftest_names_the_variable_that_chose :: proc(t: ^testing.T) {
 	}
 }
 
+// A LANGUAGETOOL_SERVER without a scheme worked in v0.1.0 (curl reads it as
+// http). --selftest shows the URL it uses and says that http:// was assumed.
+@(test)
+selftest_shows_the_url_it_made_of_a_variable_without_a_scheme :: proc(t: ^testing.T) {
+	fake, port := fake_lt_start(RECORDINGS, .Replay)
+	defer fake_lt_stop(t, fake)
+	if !testing.expect(t, fake != nil) {
+		return
+	}
+	bare := fmt.aprintf("127.0.0.1:%d", port)
+	defer delete(bare)
+	c := cli({"--selftest"}, {lt = {server = bare}})
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 0)
+	want := fmt.tprintf(
+		"  url           : http://%s, from LANGUAGETOOL_SERVER (http:// assumed: the value has no scheme)\n",
+		bare,
+	)
+	testing.expectf(t, strings.contains(c.out, want), "lacks %q in:\n%s", want, c.out)
+	// Any other scheme is refused with exit 2.
+	bad := cli({"--selftest"}, {lt = {server = "ftp://127.0.0.1:1"}})
+	defer cli_done(&bad)
+	testing.expect_value(t, bad.code, 2)
+}
+
 // --selftest on a broken file, and on Premium without a key: exit 2, the
 // problem shown, nothing probed. The key is never printed.
 @(test)

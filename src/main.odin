@@ -613,7 +613,9 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	case .Server:
 		if b.url != "" {
 			selftest_label(w, "url")
-			fmt.wprintf(w, "%s, from %s\n", b.url, ENV_SERVER if env.lt.server != "" else "config.json")
+			from := ENV_SERVER if env.lt.server != "" else "config.json"
+			note := " (http:// assumed: the value has no scheme)" if b.assumed_http else ""
+			fmt.wprintf(w, "%s, from %s%s\n", b.url, from, note)
 		}
 	case .Public, .Premium:
 		selftest_label(w, "url")

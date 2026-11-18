@@ -69,6 +69,9 @@ Backend :: struct {
 	kind:                      Backend_Kind,
 	url, username, key, label: string,
 	key_from:                  Key_Source,
+	// `url` is the `LANGUAGETOOL_SERVER` value with `http://` put in front,
+	// because it had no scheme; --selftest says so.
+	assumed_http:              bool,
 }
 
 // Where a Premium backend's key came from, for `--selftest`. `None` for
@@ -638,6 +641,10 @@ read_languagetool :: proc(
 // `key` and its source in `key_from` (both zero when no source gave one), the
 // kind staying `.None`. The message never holds the key.
 //
+// A `env.server` without "://" is read as http, as curl does and as v0.1.0
+// did: `localhost:8081` becomes `http://localhost:8081` and `assumed_http` is
+// set. Any other scheme, and a scheme-less value in the file, are refused.
+//
 // Both results are allocated with `allocator`; free the backend with
 // `backend_destroy` and the problem with `delete`.
 choose_backend :: proc(
@@ -669,6 +676,13 @@ choose_backend :: proc(
 			)
 			return
 		}
+		assumed_http := false
+		if env.server != "" && !strings.contains(url, "://") {
+			// v0.1.0 gave the variable to curl as it was, and curl reads
+			// `localhost:8081` as http. Any other scheme is still refused.
+			url = strings.concatenate({"http://", url}, context.temp_allocator)
+			assumed_http = true
+		}
 		if !has_http_scheme(url) {
 			// Say where the bad value is, so that it is not looked for in the
 			// wrong place. The value itself stays out: a URL may hold a login.
@@ -683,6 +697,7 @@ choose_backend :: proc(
 			kind  = .Server,
 			url   = strings.clone(url, allocator),
 			label = strings.clone("self-hosted", allocator),
+			assumed_http = assumed_http,
 		}
 	case .Premium:
 		username := env.username if env.username != "" else s.username
