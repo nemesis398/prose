@@ -513,8 +513,17 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 	created := false
 	if dir != "" && !os.exists(dir) {
 		parent, _ := os.split_path(dir)
-		if parent != "" {
-			_ = os.make_directory_all(parent)
+		if parent != "" && !os.exists(parent) {
+			if merr := os.make_directory_all(parent); merr != nil && merr != .Exist {
+				return setup_fail(
+					path,
+					allocator,
+					"cannot write %s: the directory %s cannot be made (%s)",
+					target,
+					parent,
+					os.error_string(merr),
+				)
+			}
 		}
 		if merr := os.make_directory(dir, os.perm_number(0o700)); merr != nil && merr != .Exist {
 			return setup_fail(path, allocator, "cannot write %s: the directory cannot be made (%s)", target, os.error_string(merr))
@@ -528,6 +537,7 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 		_ = os.remove(dir)
 	}
 
+	sweep_stale_temps(dir, allocator)
 	file, tmp, cerr := create_temp(dir, allocator)
 	if cerr != nil {
 		return setup_fail(path, allocator, "cannot write %s (%s)", target, os.error_string(cerr))
@@ -561,8 +571,82 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 		_ = os.remove(tmp)
 		return setup_fail(path, allocator, "cannot write %s: cannot replace it (%s)", target, os.error_string(rerr))
 	}
+	// The rename is in the directory's entries; without this sync a crash
+	// right after could bring the old file back. Best effort: a file system
+	// that cannot sync a directory has nothing more to give.
+	_ = sync_directory(dir)
 	failed = false
 	return {}
+}
+
+@(private = "file")
+TEMP_PREFIX :: ".config.json."
+@(private = "file")
+TEMP_SUFFIX :: ".tmp"
+
+// sweep_stale_temps removes the temporary files that a crashed write left in
+// `dir`: `.config.json.<pid>.<n>.tmp` (see `create_temp`), regular files
+// whose process is gone. Not those of this process, which may be writing in
+// another thread, and nothing on Windows, which cannot tell a live process
+// from a dead one (`process_may_be_alive`). Problems are ignored: a leftover
+// is clutter, not a fault of this write.
+@(private = "file")
+sweep_stale_temps :: proc(dir: string, allocator: runtime.Allocator) {
+	entries, err := os.read_all_directory_by_path(dir if dir != "" else ".", allocator)
+	if err != nil {
+		return
+	}
+	defer os.file_info_slice_delete(entries, allocator)
+	for entry in entries {
+		if entry.type != .Regular {
+			continue
+		}
+		pid, ours := temp_file_pid(entry.name)
+		if !ours || pid == os.get_pid() || process_may_be_alive(pid) {
+			continue
+		}
+		path: string
+		if dir != "" {
+			path, _ = os.join_path({dir, entry.name}, allocator)
+		} else {
+			path = strings.clone(entry.name, allocator)
+		}
+		_ = os.remove(path)
+		delete(path, allocator)
+	}
+}
+
+// temp_file_pid reads the process id out of the name of a temporary file,
+// `.config.json.<pid>.<n>.tmp` with two numbers. It is false for any other
+// name.
+@(private = "file")
+temp_file_pid :: proc(name: string) -> (pid: int, ok: bool) {
+	if !strings.has_prefix(name, TEMP_PREFIX) || !strings.has_suffix(name, TEMP_SUFFIX) {
+		return 0, false
+	}
+	middle := name[len(TEMP_PREFIX):len(name) - len(TEMP_SUFFIX)]
+	dot := strings.index_byte(middle, '.')
+	if dot <= 0 {
+		return 0, false
+	}
+	pid_text, count_text := middle[:dot], middle[dot + 1:]
+	if !all_digits(pid_text) || !all_digits(count_text) {
+		return 0, false
+	}
+	return strconv.parse_int(pid_text, 10)
+}
+
+@(private = "file")
+all_digits :: proc(s: string) -> bool {
+	if s == "" {
+		return false
+	}
+	for c in transmute([]u8)s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // create_temp creates a new file in `dir` with mode 0600, under a name no
@@ -571,7 +655,7 @@ write_checked :: proc(path, target, text: string, allocator: runtime.Allocator) 
 create_temp :: proc(dir: string, allocator: runtime.Allocator) -> (file: ^os.File, name: string, err: os.Error) {
 	pid := os.get_pid()
 	for i in 0 ..< 1000 {
-		leaf := fmt.tprintf(".config.json.%d.%d.tmp", pid, i)
+		leaf := fmt.tprintf(TEMP_PREFIX + "%d.%d" + TEMP_SUFFIX, pid, i)
 		full := leaf
 		if dir != "" {
 			full, _ = os.join_path({dir, leaf}, allocator)

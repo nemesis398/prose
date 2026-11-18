@@ -1,5 +1,6 @@
 package prose_tests
 
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -81,6 +82,13 @@ read :: proc(path: string) -> string {
 		return strings.clone("(missing)")
 	}
 	return string(data)
+}
+
+@(private = "file")
+exists_in :: proc(dir, name: string) -> bool {
+	path := join(dir, name)
+	defer delete(path)
+	return os.exists(path)
 }
 
 @(private = "file")
@@ -357,20 +365,139 @@ a_typo_in_the_backend_exits_2_and_leaves_the_file_alone :: proc(t: ^testing.T) {
 a_failed_first_write_leaves_no_file :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
-	cfg := join(dir, "prose")
+	path_of :: proc(cfg: string) -> string {
+		return join(cfg, "config.json")
+	}
+	// A fault in the values stops before anything is made. A server backend
+	// without a URL passes the values and fails the check of the merged file,
+	// after the directory and the temporary file exist: both must go.
+	for bad, i in ([]string{`{"languagetool": {"backend": "premuim"}}`, `{"languagetool": {"backend": "server"}}`}) {
+		cfg := join(dir, "prose", fmt.tprint(i))
+		defer delete(cfg)
+		c := values(cfg, bad)
+		defer cli_done(&c)
+		testing.expectf(t, c.code == 2, "%s: exit %d", bad, c.code)
+		path := path_of(cfg)
+		defer delete(path)
+		testing.expect(t, !os.exists(path))
+		// Nothing is left of the directory this call made, and so no
+		// temporary file either.
+		testing.expectf(t, !os.exists(cfg), "%s was left behind", cfg)
+	}
+}
+
+// Leftovers of a crashed write, `.config.json.<pid>.<n>.tmp`, are swept when
+// the process that left them is gone. POSIX only; Windows cannot tell.
+@(test)
+temporary_files_of_dead_processes_are_swept :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	dir := scratch(t)
+	defer scratch_done(dir)
+	// A process that has ended: its id is free.
+	child, cerr := os.process_start(os.Process_Desc{command = {"true"}})
+	if cerr != nil {
+		return
+	}
+	_, _ = os.process_wait(child)
+	dead := child.pid
+	own := os.get_pid()
+	stale := fmt.tprintf(".config.json.%d.0.tmp", dead)
+	stale2 := fmt.tprintf(".config.json.%d.17.tmp", dead)
+	own_tmp := fmt.tprintf(".config.json.%d.5.tmp", own)
+	init_tmp := ".config.json.1.0.tmp" // process 1 always lives
+	// Names that are not ours stay, whoever's id they carry.
+	keepers := [?]string {
+		fmt.tprintf(".config.json.%d.tmp", dead),
+		fmt.tprintf(".config.json.%d.0.tmp.bak", dead),
+		fmt.tprintf("config.json.%d.0.tmp", dead),
+		fmt.tprintf(".config.json.%d.x.tmp", dead),
+		fmt.tprintf(".config.json.x.0.tmp"),
+		fmt.tprintf(".config.json.%d.0.1.tmp", dead),
+		"credentials",
+		"dictionary.txt",
+	}
+	for name in ([]string{stale, stale2, own_tmp, init_tmp}) {
+		f := join(dir, name)
+		defer delete(f)
+		put(t, f, "half a write")
+	}
+	for name in keepers {
+		f := join(dir, name)
+		defer delete(f)
+		put(t, f, "other")
+	}
+	// A directory named like a leftover is not one.
+	adir := join(dir, fmt.tprintf(".config.json.%d.3.tmp", dead))
+	defer delete(adir)
+	testing.expect(t, os.make_directory(adir) == nil)
+
+	c := values(dir, `{"languageRule": "R"}`)
+	defer cli_done(&c)
+	testing.expect_value(t, c.code, 0)
+	testing.expectf(t, !exists_in(dir, stale), "%s was not swept", stale)
+	testing.expectf(t, !exists_in(dir, stale2), "%s was not swept", stale2)
+	testing.expect(t, exists_in(dir, own_tmp), "a file of this very process was swept")
+	testing.expect(t, exists_in(dir, init_tmp), "a file of a live process was swept")
+	for name in keepers {
+		testing.expectf(t, exists_in(dir, name), "%s was swept", name)
+	}
+	testing.expect(t, os.is_dir(adir))
+}
+
+// The checks the sweep relies on.
+@(test)
+a_process_id_is_alive_or_free :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	testing.expect(t, prose.process_may_be_alive(os.get_pid()))
+	testing.expect(t, prose.process_may_be_alive(1))
+	testing.expect(t, !prose.process_may_be_alive(0))
+	testing.expect(t, !prose.process_may_be_alive(-5))
+	child, cerr := os.process_start(os.Process_Desc{command = {"true"}})
+	if cerr == nil {
+		_, _ = os.process_wait(child)
+		testing.expect(t, !prose.process_may_be_alive(child.pid))
+	}
+	// A directory can be synced; one that is not there reports it.
+	dir := scratch(t)
+	defer scratch_done(dir)
+	testing.expect(t, prose.sync_directory(dir) == nil)
+	gone := join(dir, "gone")
+	defer delete(gone)
+	testing.expect(t, prose.sync_directory(gone) != nil)
+}
+
+// A directory that cannot be made is reported with the one that failed.
+@(test)
+a_parent_that_cannot_be_made_is_reported :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	dir := scratch(t)
+	defer scratch_done(dir)
+	locked := join(dir, "locked")
+	defer delete(locked)
+	testing.expect(t, os.make_directory(locked) == nil)
+	testing.expect(t, os.change_mode(locked, os.perm_number(0o500)) == nil)
+	defer _ = os.change_mode(locked, os.perm_number(0o700))
+	probe := join(locked, "probe")
+	defer delete(probe)
+	if os.write_entire_file_from_string(probe, "x") == nil {
+		_ = os.remove(probe)
+		return // running as a user the mode does not bind
+	}
+	cfg := join(locked, "deeper", "prose")
 	defer delete(cfg)
-	c := values(cfg, `{"languagetool": {"backend": "premuim"}}`)
+	c := values(cfg, `{"languageRule": "R"}`)
 	defer cli_done(&c)
 	testing.expect_value(t, c.code, 2)
-	path := join(cfg, "config.json")
-	defer delete(path)
-	testing.expect(t, !os.exists(path))
-	// No temporary file is left behind either.
-	if os.exists(cfg) {
-		listing := names(cfg)
-		defer delete(listing)
-		testing.expect_value(t, listing, "")
-	}
+	deeper := join(locked, "deeper")
+	defer delete(deeper)
+	expect_contains(t, c.err, cat("the directory ", deeper, " cannot be made"))
+	expect_contains(t, c.err, "unchanged")
 }
 
 @(test)
