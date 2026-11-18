@@ -173,6 +173,15 @@ command_with_input :: proc(
 		data = input,
 	}
 	writer := thread.create(feed_stdin)
+	if writer == nil {
+		// No thread to feed the child: no run. The child is ended before the
+		// pipes close, so that it does not linger on a stdin that never ends.
+		_ = os.process_kill(proc_)
+		_, _ = os.process_wait(proc_, time.Second)
+		_ = os.close(in_w)
+		_ = os.close(out_r)
+		return nil, false
+	}
 	writer.data = &feed
 	writer.init_context = context
 	thread.start(writer)
