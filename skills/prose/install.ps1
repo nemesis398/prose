@@ -14,7 +14,9 @@ PROSE_RELEASE_BASE replaces https://github.com/nemesis398/prose/releases/downloa
 (the tests point it at a file: folder, which this script copies, because
 Invoke-WebRequest in PowerShell 7 has no file support). PROSE_TEST_PLATFORM
 replaces the detected platform, as "Windows X64" or any other text, so the
-tests can run the script on Linux and macOS. Every refusal is one line on
+tests can run the script on Linux and macOS; with it, PROSE_TEST_MACHINE
+stands in for PROCESSOR_ARCHITEW6432, which Windows sets for each new process
+itself, so a test cannot hand it to the script. Every refusal is one line on
 stderr and exit 1, and leaves nothing behind in bin\.
 #>
 [CmdletBinding()]
@@ -125,7 +127,8 @@ function Install-Prose {
     # A 32-bit PowerShell on x64 Windows reports X86, but the machine is x64
     # and runs the x64 binary: Windows names the machine's architecture in
     # PROCESSOR_ARCHITEW6432 for a process that runs under WOW64.
-    if ($platform -eq 'Windows X86' -and $env:PROCESSOR_ARCHITEW6432 -eq 'AMD64') {
+    $machine = if ($env:PROSE_TEST_PLATFORM) { $env:PROSE_TEST_MACHINE } else { $env:PROCESSOR_ARCHITEW6432 }
+    if ($platform -eq 'Windows X86' -and $machine -eq 'AMD64') {
         $platform = 'Windows X64'
     }
     if ($platform -ne 'Windows X64') { Stop-Install "unsupported platform: $platform" }

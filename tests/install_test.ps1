@@ -172,7 +172,7 @@ function Run-Suite([string]$Name, [string]$Base) {
     Check "install leaves only prose-check.exe in bin/ (got: $($left -join ', '))" (($left.Count -eq 1) -and ($left[0] -eq 'prose-check.exe'))
 
     # 2. unsupported platforms are refused in one line
-    Remove-Item Env:PROCESSOR_ARCHITEW6432 -ErrorAction SilentlyContinue
+    Remove-Item Env:PROSE_TEST_MACHINE -ErrorAction SilentlyContinue
     foreach ($p in 'SunOS sparc', 'Linux Arm64', 'Windows Arm64', 'Windows X86') {
         New-Root $root
         $env:PROSE_TEST_PLATFORM = $p
@@ -185,30 +185,32 @@ function Run-Suite([string]$Name, [string]$Base) {
     $env:PROSE_TEST_PLATFORM = 'Windows X64'
 
     # 2b. a 32-bit PowerShell on x64 Windows reports X86, and
-    # PROCESSOR_ARCHITEW6432 names the machine. Only the machine's AMD64 turns
+    # PROCESSOR_ARCHITEW6432 names the machine. Windows sets that variable for
+    # each new process itself, so the test hands PROSE_TEST_MACHINE instead;
+    # case 10b runs a real 32-bit PowerShell. Only the machine's AMD64 turns
     # X86 into X64; the variable is unset again after each case.
     $env:PROSE_TEST_PLATFORM = 'Windows X86'
     New-Root $root
-    $env:PROCESSOR_ARCHITEW6432 = 'AMD64'
+    $env:PROSE_TEST_MACHINE = 'AMD64'
     $r = Invoke-Install $root
     Check "32-bit PowerShell on x64 Windows: exit 0 (got $($r.Rc): $($r.Out))" ($r.Rc -eq 0)
     Check '32-bit PowerShell on x64 Windows: bin/prose-check.exe in place' (Test-Path -LiteralPath $exe)
     New-Root $root
-    $env:PROCESSOR_ARCHITEW6432 = 'ARM64'
+    $env:PROSE_TEST_MACHINE = 'ARM64'
     $r = Invoke-Install $root
     Check "32-bit PowerShell on ARM64 Windows: refused (rc $($r.Rc))" ($r.Rc -ne 0)
     Check "32-bit PowerShell on ARM64 Windows: names the process platform (got: $($r.Out))" ($r.Out.Contains('unsupported platform: Windows X86'))
     New-Root $root
-    Remove-Item Env:PROCESSOR_ARCHITEW6432 -ErrorAction SilentlyContinue
+    Remove-Item Env:PROSE_TEST_MACHINE -ErrorAction SilentlyContinue
     $r = Invoke-Install $root
-    Check "32-bit Windows (no PROCESSOR_ARCHITEW6432): refused (rc $($r.Rc))" ($r.Rc -ne 0)
+    Check "32-bit Windows (no machine architecture): refused (rc $($r.Rc))" ($r.Rc -ne 0)
     Check '32-bit Windows: bin/ empty' (Dir-Empty $bin)
     $env:PROSE_TEST_PLATFORM = 'Windows X64'
     New-Root $root
-    $env:PROCESSOR_ARCHITEW6432 = 'AMD64'
+    $env:PROSE_TEST_MACHINE = 'AMD64'
     $r = Invoke-Install $root
-    Remove-Item Env:PROCESSOR_ARCHITEW6432 -ErrorAction SilentlyContinue
-    Check "X64 stays X64 whatever PROCESSOR_ARCHITEW6432 says: exit 0 (got $($r.Rc))" ($r.Rc -eq 0)
+    Remove-Item Env:PROSE_TEST_MACHINE -ErrorAction SilentlyContinue
+    Check "X64 stays X64 whatever the machine architecture says: exit 0 (got $($r.Rc))" ($r.Rc -eq 0)
 
     # 3. a wrong checksum
     New-Root $root
@@ -340,6 +342,21 @@ function Run-Suite([string]$Name, [string]$Base) {
     } else {
         Check "real other platform: refused (got $($r.Rc): $($r.Out))" (($r.Rc -ne 0) -and $r.Out.Contains('unsupported platform: '))
         Check 'real other platform: bin/ empty' (Dir-Empty $bin)
+    }
+
+    # 10b. on Windows, a real 32-bit Windows PowerShell (SysWOW64) on the x64
+    # runner: the platform reads X86 and Windows sets PROCESSOR_ARCHITEW6432
+    # to AMD64, so the x64 binary is installed.
+    $wow64 = if ($onWindows -and $env:SystemRoot) { [IO.Path]::Combine($env:SystemRoot, 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe') } else { '' }
+    if ($realWindowsX64 -and $wow64 -and (Test-Path -LiteralPath $wow64)) {
+        New-Root $root
+        $ErrorActionPreference = 'Continue'
+        $script = Join (Join (Join $root 'skills') 'prose') 'install.ps1'
+        $lines = & $wow64 -NoProfile -NonInteractive -File $script 2>&1 | ForEach-Object { "$_" }
+        $rc = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+        Check "real 32-bit PowerShell on x64 Windows: exit 0 (got ${rc}: $($lines -join ' | '))" ($rc -eq 0)
+        Check 'real 32-bit PowerShell on x64 Windows: bin/prose-check.exe in place' (Test-Path -LiteralPath $exe)
     }
     $env:PROSE_TEST_PLATFORM = 'Windows X64'
 
