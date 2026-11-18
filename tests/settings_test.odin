@@ -627,7 +627,7 @@ premium_without_an_account_is_a_problem :: proc(t: ^testing.T) {
 	defer done(&b, problem)
 	testing.expect(t, strings.contains(problem, "LANGUAGETOOL_USERNAME"))
 	testing.expect(t, strings.contains(problem, "languagetool.username"))
-	testing.expect(t, b.key == "" && b.url == "")
+	testing.expect(t, b.kind == .None && b.url == "" && b.username == "")
 }
 
 @(test)
@@ -642,6 +642,46 @@ the_key_from_the_variable_beats_rbw :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, b.key, "ENV-KEY")
 	testing.expect_value(t, b.key_from, prose.Key_Source.Env)
+}
+
+// A Premium backend refused for want of the account still says which key it
+// found and where from, so that --selftest need not look a second time.
+@(test)
+a_refused_premium_backend_still_reports_the_key_it_found :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	cred := put(t, dir, "credentials", "FILE-KEY\n")
+	defer delete(cred)
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		key_item = "lt",
+	}
+	b, problem := choose(t, s, {api_key = "ENV-KEY"}, {rbw = rbw_key, credentials_path = cred})
+	defer done(&b, problem)
+	testing.expectf(t, problem != "", "no problem")
+	testing.expect_value(t, b.key, "ENV-KEY")
+	testing.expect_value(t, b.key_from, prose.Key_Source.Env)
+	testing.expect_value(t, b.kind, prose.Backend_Kind.None)
+	testing.expect_value(t, b.url, "")
+
+	b2, problem2 := choose(t, s, {}, {rbw = rbw_key, credentials_path = cred})
+	defer done(&b2, problem2)
+	testing.expect(t, problem2 != "")
+	testing.expect_value(t, b2.key, "RBW-KEY")
+	testing.expect_value(t, b2.key_from, prose.Key_Source.Rbw)
+
+	b3, problem3 := choose(t, {backend = prose.Backend_Kind.Premium}, {}, {credentials_path = cred})
+	defer done(&b3, problem3)
+	testing.expect(t, problem3 != "")
+	testing.expect_value(t, b3.key, "FILE-KEY")
+	testing.expect_value(t, b3.key_from, prose.Key_Source.Credentials)
+
+	// No key anywhere: nothing to report.
+	b4, problem4 := choose(t, {backend = prose.Backend_Kind.Premium}, {}, {})
+	defer done(&b4, problem4)
+	testing.expect(t, problem4 != "")
+	testing.expect_value(t, b4.key, "")
+	testing.expect_value(t, b4.key_from, prose.Key_Source.None)
 }
 
 @(test)

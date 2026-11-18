@@ -634,7 +634,9 @@ read_languagetool :: proc(
 // premium backend without an account or a key (the message names all three
 // key sources), a wider credentials file, a server backend without a URL.
 // It is "" when all is well, and then `Backend` is set. On a problem
-// `Backend` is empty. The message never holds the key.
+// `Backend` is empty, except that a Premium setup keeps the key it found in
+// `key` and its source in `key_from` (both zero when no source gave one), the
+// kind staying `.None`. The message never holds the key.
 //
 // Both results are allocated with `allocator`; free the backend with
 // `backend_destroy` and the problem with `delete`.
@@ -688,7 +690,12 @@ choose_backend :: proc(
 		defer delete(key_problem, allocator)
 		if username == "" || key_problem != "" {
 			problem = premium_problem(s, username == "", key_problem, allocator)
-			delete(key, allocator)
+			// Nothing to run, but the key found stays, with where it came from:
+			// --selftest tells the user which source answered.
+			b = Backend {
+				key      = key,
+				key_from = key_from,
+			}
 			return
 		}
 		b = Backend {
@@ -737,9 +744,8 @@ premium_problem :: proc(s: Settings, no_username: bool, key_problem: string, all
 }
 
 // find_key walks the key sources in order. It returns the key (allocated)
-// and where it came from, or "" and the problem to show. `--selftest` calls
-// it to say whether a Premium setup that `choose_backend` refused has a key.
-@(private)
+// and where it came from, or "" and the problem to show.
+@(private = "file")
 find_key :: proc(
 	s: Settings,
 	env: Env,

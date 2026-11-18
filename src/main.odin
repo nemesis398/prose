@@ -556,29 +556,6 @@ selftest_heading :: proc(w: io.Writer, name: string, color: bool) {
 	_, _ = io.write_string(w, "\n")
 }
 
-// What `remembering_rbw` keeps: the first answer of the real lookup.
-@(private = "file")
-Remembered_Rbw :: struct {
-	inner: proc(item: string) -> (string, bool),
-	asked: bool,
-	item:  string,
-	key:   string,
-	ok:    bool,
-}
-
-// remembering_rbw is a `Key_Lookup.rbw` that asks `Remembered_Rbw.inner`, in
-// `context.user_ptr`, the first time only and answers the same afterwards. A
-// lookup has no room for state of its own, so the state comes in the context.
-@(private = "file")
-remembering_rbw :: proc(item: string) -> (string, bool) {
-	r := (^Remembered_Rbw)(context.user_ptr)
-	if !r.asked || r.item != item {
-		r.key, r.ok = r.inner(item)
-		r.item, r.asked = item, true
-	}
-	return r.key, r.ok
-}
-
 // selftest is --selftest: the settings file, the backend and where its
 // values came from, the key by length only, the dictionary files, and a
 // probe of the backend. Exit 2 when the settings file is unusable, the
@@ -623,18 +600,9 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	selftest_heading(w, "Backend", color)
 	cred := config_file_in(env.config_dir, "credentials")
 	defer delete(cred)
-	// The rbw agent is asked once however often the key is looked for: the
-	// backend is chosen with the key, and a refused Premium setup describes
-	// the key again below.
-	remembered := Remembered_Rbw {
-		inner = env.rbw,
-	}
-	context.user_ptr = &remembered
-	lookup := Key_Lookup {
-		rbw              = remembering_rbw if env.rbw != nil else nil,
-		credentials_path = cred,
-	}
-	b, problem := choose_backend(s, env.lt, lookup)
+	// The key is looked for once, here; a refused Premium setup still hands
+	// back the key it found, so the rbw agent is asked once.
+	b, problem := choose_backend(s, env.lt, Key_Lookup{rbw = env.rbw, credentials_path = cred})
 	defer backend_destroy(&b)
 	defer delete(problem)
 	kind, kind_from := backend_kind(s, env.lt)
@@ -666,19 +634,7 @@ selftest :: proc(w: io.Writer, env: Run_Env, color: bool) -> int {
 	if kind != .Premium {
 		_, _ = io.write_string(w, "(not used by this backend)\n")
 	} else {
-		key, from := b.key, b.key_from
-		found: string
-		if problem != "" {
-			// choose_backend gives nothing back on a problem; ask the key
-			// sources alone, so that a missing account does not read as a
-			// missing key.
-			kp: string
-			found, from, kp = find_key(s, env.lt, lookup, context.allocator)
-			delete(kp)
-			key = found
-		}
-		defer delete(found)
-		desc := key_description(key, from, s.key_item, cred)
+		desc := key_description(b.key, b.key_from, s.key_item, cred)
 		defer delete(desc)
 		fmt.wprintf(w, "%s\n", desc)
 	}
