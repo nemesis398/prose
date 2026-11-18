@@ -8,9 +8,11 @@ import "core:os"
 import "core:strconv"
 import "core:strings"
 import "core:sync"
+import "core:testing"
 import "core:thread"
 import "core:time"
 import "core:unicode/utf8"
+import prose "../src"
 
 // A fake LanguageTool: plain HTTP on 127.0.0.1, an ephemeral port, one
 // thread, answering `POST /v2/check` from the recordings in
@@ -26,7 +28,7 @@ import "core:unicode/utf8"
 //
 //   language   the form field `language`, as sent (`de-DE` or `en-US`).
 //   level      the form field `level`: `picky` or `default`. When the field
-//              is absent, as in the probe, the level is `default`.
+//              is absent, as in the probe, or empty, the level is `default`.
 //   canonical  the annotation items joined with "\x01" (U+0001), no
 //              separator at the end. They come from one of two fields:
 //              `data`, a JSON document {"annotation": [ITEM, ...]}, where an
@@ -49,11 +51,16 @@ import "core:unicode/utf8"
 // `tests/lt-recordings/<key>.json` holds LanguageTool's response body byte
 // for byte; the fake sends it back with status 200 and `Content-Type:
 // application/json`. A key without a file answers 404 with `no recording for
-// key <key>` as the body, any other path 404, and a GET on `/v2/check` 405.
+// key <key>` as the body, any other path 404, and a GET on `/v2/check` 405. A
+// recording that exists and cannot be read answers 500 with the error.
+// A POST whose body cannot be keyed is malformed and gets 400 with `malformed
+// request`: a form that is not UTF-8, or a `data` that is not a JSON object
+// holding an `annotation` list of objects.
 //
 // Each test starts its own fake with `fake_lt_start` and ends it with
-// `fake_lt_stop`, which joins the thread and frees everything. Odin has no
-// closures, so the fake is a handle rather than a `stop` procedure.
+// `fake_lt_stop`, which joins the thread, frees everything and fails the test
+// when the server thread died of an unexpected error. Odin has no closures,
+// so the fake is a handle rather than a `stop` procedure.
 
 Fake_Mode :: enum {
 	// Answer every request from its recording; 404 without one.
@@ -79,6 +86,17 @@ Fake_Mode :: enum {
 	// Replay for the probe, then 200 and `{"status":"ok"}` for every check
 	// request (one with a `data` field).
 	No_Matches_After_Probe,
+	// A self-hosted open-source server: the probe gets `software.premium`
+	// false and one match, every check request `{"matches":[]}`.
+	Probe_Free,
+	// Like Probe_Free, but `software.premium` is true and `premiumHint` is set,
+	// as a Premium account that LanguageTool still nags about says it.
+	Probe_Premium_Hint,
+	// Answer every POST with 200 and a body bigger than MAX_RESPONSE_BYTES,
+	// streamed until the client gives up.
+	Too_Big_Answer,
+	// The first request gets 429, every later one is replayed.
+	Rate_Limit_First,
 }
 
 Fake_Lt :: struct {
@@ -93,6 +111,12 @@ Fake_Lt :: struct {
 	held:      [dynamic]net.TCP_Socket,
 	// The server thread's own, for Fail_Second_Chunk.
 	data_keys: [dynamic]string,
+	// Why the server thread ended on its own; "" when it did not. Written by
+	// that thread, read after the join.
+	failure:   string,
+	// Every request body read in full, for `fake_lt_requests_with_field`.
+	bodies_mu: sync.Mutex,
+	bodies:    [dynamic]string,
 }
 
 // A request bigger than this is refused. A full chunk is under 1 MiB.
@@ -100,8 +124,8 @@ Fake_Lt :: struct {
 MAX_REQUEST_BYTES :: 16 << 20
 
 // fake_lt_start starts a fake that answers from `recordings_dir` (copied)
-// in `mode`. It fails the calling test, and returns nil, when it cannot
-// listen.
+// in `mode`. When it cannot listen it prints why and returns nil without
+// failing the test: the caller expects a non-nil fake.
 fake_lt_start :: proc(recordings_dir: string, mode: Fake_Mode) -> (fake: ^Fake_Lt, port: int) {
 	listener, err := net.listen_tcp(net.Endpoint{address = net.IP4_Loopback, port = 0})
 	if err != nil {
@@ -120,6 +144,18 @@ fake_lt_start :: proc(recordings_dir: string, mode: Fake_Mode) -> (fake: ^Fake_L
 	fake.port = ep.port
 	fake.data_keys = make([dynamic]string)
 	fake.held = make([dynamic]net.TCP_Socket)
+	fake.bodies = make([dynamic]string)
+	// accept must not block, or stopping would depend on waking it.
+	if serr := net.set_blocking(listener, false); serr != nil {
+		fmt.eprintfln("fake LanguageTool: cannot make the listener non-blocking: %v", serr)
+		net.close(listener)
+		delete(fake.data_keys)
+		delete(fake.held)
+		delete(fake.bodies)
+		delete(fake.dir)
+		free(fake)
+		return nil, 0
+	}
 	fake.worker = thread.create(fake_serve)
 	fake.worker.data = fake
 	fake.worker.init_context = context
@@ -127,16 +163,23 @@ fake_lt_start :: proc(recordings_dir: string, mode: Fake_Mode) -> (fake: ^Fake_L
 	return fake, fake.port
 }
 
-// fake_lt_stop stops the fake: it wakes the thread out of `accept` with a
-// connection of its own, joins it, and frees everything.
-fake_lt_stop :: proc(fake: ^Fake_Lt) {
+// fake_lt_stop stops the fake and fails `t` when the server thread had ended
+// on an error nobody asked for. See `fake_lt_shutdown`.
+fake_lt_stop :: proc(t: ^testing.T, fake: ^Fake_Lt) {
 	if fake == nil {
 		return
 	}
+	failure := fake_lt_shutdown(fake)
+	defer delete(failure)
+	testing.expectf(t, failure == "", "fake LanguageTool: %s", failure)
+}
+
+// fake_lt_shutdown stops the fake: it tells the thread, which polls its
+// non-blocking listener and so needs no wake-up connection, joins it, and
+// frees everything. The result is why the thread ended on its own, "" when it
+// did not; the caller frees it with `delete`.
+fake_lt_shutdown :: proc(fake: ^Fake_Lt) -> (failure: string) {
 	sync.atomic_store(&fake.stopping, true)
-	if wake, err := net.dial_tcp(net.Endpoint{address = net.IP4_Loopback, port = fake.port}); err == nil {
-		net.close(wake)
-	}
 	thread.join(fake.worker)
 	thread.destroy(fake.worker)
 	net.close(fake.listener)
@@ -148,13 +191,34 @@ fake_lt_stop :: proc(fake: ^Fake_Lt) {
 		delete(k)
 	}
 	delete(fake.data_keys)
+	for b in fake.bodies {
+		delete(b)
+	}
+	delete(fake.bodies)
+	failure = fake.failure
 	delete(fake.dir)
 	free(fake)
+	return
 }
 
 // fake_lt_requests is the number of requests the fake has read in full.
 fake_lt_requests :: proc(fake: ^Fake_Lt) -> int {
 	return sync.atomic_load(&fake.requests)
+}
+
+// fake_lt_requests_with_field is the number of request bodies read so far
+// that carry the form field `name` with exactly `value`.
+fake_lt_requests_with_field :: proc(fake: ^Fake_Lt, name, value: string) -> int {
+	sync.guard(&fake.bodies_mu)
+	count := 0
+	for body in fake.bodies {
+		form, ok := parse_form(body)
+		defer form_destroy(&form)
+		if ok && (form[name] or_else "\x00") == value {
+			count += 1
+		}
+	}
+	return count
 }
 
 @(private = "file")
@@ -168,9 +232,20 @@ fake_serve :: proc(th: ^thread.Thread) {
 			}
 			return
 		}
-		if err != nil {
+		#partial switch err {
+		case nil:
+		case .Would_Block:
+			time.sleep(time.Millisecond)
+			continue
+		case .Interrupted, .Aborted:
+			continue
+		case:
+			// Not a way to stop: say so, and let `fake_lt_stop` fail the test.
+			fake.failure = fmt.aprintf("accept failed: %v", err)
 			return
 		}
+		// Some systems hand the client the listener's non-blocking mode.
+		net.set_blocking(client, true)
 		net.set_option(client, .Receive_Timeout, time.Second)
 		if fake_handle(fake, client) {
 			append(&fake.held, client)
@@ -245,7 +320,11 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 	if !ok {
 		return
 	}
-	sync.atomic_add(&fake.requests, 1)
+	seen := sync.atomic_add(&fake.requests, 1)
+	{
+		sync.guard(&fake.bodies_mu)
+		append(&fake.bodies, strings.clone(req.body))
+	}
 
 	if fake.mode == .Hang {
 		return true
@@ -260,7 +339,7 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 		return
 	}
 	if req.method != "POST" {
-		send_response(client, 405, "text/plain", "not found")
+		send_response(client, 405, "text/plain", "method not allowed")
 		return
 	}
 	if fake.mode == .Refuse_403 {
@@ -292,6 +371,27 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 			send_response(client, 200, "application/json", `{"status":"ok"}`)
 			return
 		}
+	case .Probe_Free, .Probe_Premium_Hint:
+		switch {
+		case "data" in form:
+			send_response(client, 200, "application/json", `{"matches":[]}`)
+		case fake.mode == .Probe_Free:
+			send_response(client, 200, "application/json", `{"software":{"name":"LanguageTool","version":"6.5","premium":false},"matches":[{"offset":5,"length":3}]}`)
+		case:
+			send_response(
+				client, 200, "application/json",
+				`{"software":{"name":"LanguageTool","version":"6.5","premium":true,"premiumHint":"Upgrade"},"matches":[{"offset":5,"length":3}]}`,
+			)
+		}
+		return
+	case .Too_Big_Answer:
+		send_too_big(client)
+		return
+	case .Rate_Limit_First:
+		if seen == 0 {
+			send_response(client, 429, "text/plain", "slow down")
+			return
+		}
 	case .Replay, .Refuse_403, .Hang, .Fail_Second_Chunk:
 	}
 
@@ -312,6 +412,14 @@ fake_handle :: proc(fake: ^Fake_Lt, client: net.TCP_Socket) -> (hold: bool) {
 	path_json := strings.concatenate({fake.dir, "/", key, ".json"})
 	defer delete(path_json)
 	body, rerr := os.read_entire_file(path_json, context.allocator)
+	if rerr != nil && os.exists(path_json) {
+		// A recording that is there and cannot be read is not "no recording":
+		// say what failed, so that a flaky run can be told from a missing file.
+		msg := fmt.aprintf("cannot read the recording for key %s: %v", key, rerr)
+		defer delete(msg)
+		send_response(client, 500, "text/plain", msg)
+		return
+	}
 	if rerr != nil {
 		msg := strings.concatenate({"no recording for key ", key})
 		defer delete(msg)
@@ -335,6 +443,8 @@ send_response :: proc(client: net.TCP_Socket, status: int, ctype, body: string) 
 		reason = "Not Found"
 	case 405:
 		reason = "Method Not Allowed"
+	case 429:
+		reason = "Too Many Requests"
 	case 500:
 		reason = "Internal Server Error"
 	}
@@ -345,6 +455,24 @@ send_response :: proc(client: net.TCP_Socket, status: int, ctype, body: string) 
 	defer delete(head)
 	net.send_tcp(client, transmute([]byte)head)
 	net.send_tcp(client, transmute([]byte)body)
+}
+
+// send_too_big answers 200 with a body of zeros one block longer than the
+// client takes, and stops sending when the client has hung up.
+@(private = "file")
+send_too_big :: proc(client: net.TCP_Socket) {
+	block: [64 << 10]byte
+	total := prose.MAX_RESPONSE_BYTES + len(block)
+	head := fmt.aprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", total)
+	defer delete(head)
+	if _, err := net.send_tcp(client, transmute([]byte)head); err != nil {
+		return
+	}
+	for sent := 0; sent < total; sent += len(block) {
+		if _, err := net.send_tcp(client, block[:]); err != nil {
+			return
+		}
+	}
 }
 
 // A decoded form: each field's first value, as the reference fake keeps

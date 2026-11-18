@@ -382,7 +382,7 @@ selftest_with_nothing_set_up :: proc(t: ^testing.T) {
 selftest_probes_the_backend :: proc(t: ^testing.T) {
 	for mode in ([]Fake_Mode{.Replay, .Refuse_403}) {
 		fake, port := fake_lt_start(RECORDINGS, mode)
-		defer fake_lt_stop(fake)
+		defer fake_lt_stop(t, fake)
 		if !testing.expect(t, fake != nil) {
 			return
 		}
@@ -428,7 +428,7 @@ selftest_probes_the_backend :: proc(t: ^testing.T) {
 @(test)
 selftest_names_the_variable_that_chose :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -585,7 +585,7 @@ a_file_that_is_not_utf8_is_exit_2 :: proc(t: ^testing.T) {
 @(test)
 a_server_backend_gives_the_golden_lt_output :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -624,7 +624,7 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 	path := CORPUS + "fixture.md"
 	for mode in ([]Fake_Mode{.No_Matches, .Empty_Matches}) {
 		fake, port := fake_lt_start(RECORDINGS, mode)
-		defer fake_lt_stop(fake)
+		defer fake_lt_stop(t, fake)
 		if !testing.expect(t, fake != nil) {
 			return
 		}
@@ -645,7 +645,7 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 	}
 
 	fake, port := fake_lt_start(RECORDINGS, .No_Matches_After_Probe)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -663,7 +663,7 @@ a_server_that_does_not_check_is_never_clean :: proc(t: ^testing.T) {
 @(test)
 no_prose_sends_nothing :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -691,7 +691,7 @@ no_prose_sends_nothing :: proc(t: ^testing.T) {
 @(test)
 a_refusing_backend_is_exit_2 :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Refuse_403)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -735,3 +735,4 @@ backend_none_says_languagetool_is_off :: proc(t: ^testing.T) {
 	defer cli_done(&n)
 	testing.expect(t, strings.contains(n.out, `"note": "language: en",`))
 }
+

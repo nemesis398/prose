@@ -113,7 +113,7 @@ post_form_refuses_other_schemes :: proc(t: ^testing.T) {
 @(test)
 the_fake_answers_404_without_a_recording :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -138,7 +138,7 @@ the_fake_answers_404_without_a_recording :: proc(t: ^testing.T) {
 @(test)
 post_form_sends_an_empty_form_as_an_empty_body :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -232,7 +232,7 @@ load_golden :: proc(t: ^testing.T, path: string) -> (note: string, want: []prose
 @(test)
 languagetool_matches_the_golden_files :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -323,7 +323,7 @@ golden_lt_matches :: proc(
 @(test)
 a_refusing_backend_stops_the_check :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Refuse_403)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -349,7 +349,7 @@ a_refusing_backend_stops_the_check :: proc(t: ^testing.T) {
 a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
 	for mode in ([]Fake_Mode{.No_Matches, .Empty_Matches}) {
 		fake, port := fake_lt_start(RECORDINGS, mode)
-		defer fake_lt_stop(fake)
+		defer fake_lt_stop(t, fake)
 		if !testing.expect(t, fake != nil) {
 			return
 		}
@@ -374,7 +374,7 @@ a_backend_that_does_not_check_fails_the_probe :: proc(t: ^testing.T) {
 @(test)
 a_chunk_answer_without_matches_is_a_failed_chunk :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .No_Matches_After_Probe)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -405,7 +405,7 @@ a_chunk_answer_without_matches_is_a_failed_chunk :: proc(t: ^testing.T) {
 @(test)
 a_hanging_backend_times_out :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Hang)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -439,7 +439,7 @@ a_hanging_backend_times_out :: proc(t: ^testing.T) {
 @(test)
 a_failed_chunk_is_an_error_and_the_rest_still_counts :: proc(t: ^testing.T) {
 	fake, port := fake_lt_start(RECORDINGS, .Fail_Second_Chunk)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -483,11 +483,10 @@ a_failed_chunk_is_an_error_and_the_rest_still_counts :: proc(t: ^testing.T) {
 	testing.expect_value(t, f.excerpt, "")
 	testing.expect_value(t, f.suggestion, "re-run, and if it repeats use --no-lt knowingly rather than trusting a partial pass")
 	// "Lines A to B were never checked: HTTP 500. This run is incomplete, ..."
-	rest := strings.trim_prefix(f.message, "Lines ")
-	a_end := strings.index_byte(rest, ' ')
-	first, _ := strconv.parse_int(rest[:max(a_end, 0)])
-	rest = rest[a_end + len(" to "):]
-	last, _ := strconv.parse_int(rest[:strings.index_byte(rest, ' ')])
+	first, last, shaped := failed_lines(f.message)
+	if !testing.expectf(t, shaped, "the message is not 'Lines A to B were never checked: ...': %q", f.message) {
+		return
+	}
 	testing.expect_value(t, first, f.line)
 	testing.expectf(t, first > 1 && last > first, "lines %d to %d", first, last)
 	testing.expect(t, strings.has_suffix(f.message, " were never checked: HTTP 500. This run is incomplete, so a clean result here would be misleading."), f.message)
@@ -520,14 +519,37 @@ a_failed_chunk_is_an_error_and_the_rest_still_counts :: proc(t: ^testing.T) {
 			testing.expectf(t, g.line <= first || g.line >= last, "a finding from the failed chunk: %v", g)
 		}
 	}
-	testing.expectf(t, i == len(expected), "only %d of %d expected findings, in order; next %v", i, len(expected), expected[min(i, len(expected) - 1)])
+	testing.expectf(t, i == len(expected), "only %d of %d expected findings, in order", i, len(expected))
+}
+
+// failed_lines reads A and B out of "Lines A to B were never checked: ...".
+// False for any other shape, so a reworded message fails the test instead of
+// slicing out of range.
+@(private = "file")
+failed_lines :: proc(message: string) -> (first, last: int, ok: bool) {
+	rest := strings.trim_prefix(message, "Lines ")
+	if len(rest) == len(message) {
+		return
+	}
+	to := strings.index(rest, " to ")
+	if to < 0 {
+		return
+	}
+	first = strconv.parse_int(rest[:to]) or_return
+	rest = rest[to + len(" to "):]
+	space := strings.index_byte(rest, ' ')
+	if space < 0 {
+		return
+	}
+	last = strconv.parse_int(rest[:space]) or_return
+	return first, last, true
 }
 
 // No backend sends nothing: not the probe, not a chunk.
 @(test)
 no_backend_sends_nothing :: proc(t: ^testing.T) {
 	fake, _ := fake_lt_start(RECORDINGS, .Replay)
-	defer fake_lt_stop(fake)
+	defer fake_lt_stop(t, fake)
 	if !testing.expect(t, fake != nil) {
 		return
 	}
@@ -586,4 +608,22 @@ chunk_annotations_split_at_the_limit :: proc(t: ^testing.T) {
 	empty := prose.chunk_annotations({}, 0, 10)
 	defer delete(empty)
 	testing.expect_value(t, len(empty), 0)
+}
+
+// The fake's accept loop dying of an error nobody asked for is reported at
+// stop, and stopping does not hang. Linux only: shutdown on a listening
+// socket is what makes accept fail there.
+@(test)
+the_fake_reports_an_accept_error_and_still_stops :: proc(t: ^testing.T) {
+	when ODIN_OS == .Linux {
+		fake, _ := fake_lt_start(RECORDINGS, .Replay)
+		if !testing.expect(t, fake != nil) {
+			return
+		}
+		testing.expect(t, net.shutdown(fake.listener, .Both) == nil)
+		time.sleep(200 * time.Millisecond)
+		failure := fake_lt_shutdown(fake)
+		defer delete(failure)
+		testing.expectf(t, strings.has_prefix(failure, "accept failed"), "failure %q", failure)
+	}
 }
