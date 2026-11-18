@@ -564,6 +564,32 @@ a_credentials_file_wider_than_600_is_refused :: proc(t: ^testing.T) {
 	testing.expect(t, problem == "" && b.key == "ENV-KEY")
 }
 
+// The credentials file is opened once and checked on that descriptor. A FIFO
+// in its place is no regular file and must not make the open wait for a writer.
+@(test)
+a_fifo_as_the_credentials_file_is_no_key_and_no_hang :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		return
+	}
+	dir := scratch(t)
+	defer scratch_done(dir)
+	fifo, _ := os.join_path({dir, "credentials"}, context.allocator)
+	defer delete(fifo)
+	state, _, _, perr := os.process_exec(os.Process_Desc{command = {"mkfifo", fifo}}, context.allocator)
+	if perr != nil || !state.success {
+		return // no mkfifo here: nothing to test
+	}
+	s := prose.Settings {
+		backend  = prose.Backend_Kind.Premium,
+		username = "u",
+	}
+	start := time.tick_now()
+	b, problem := choose(t, s, {}, {credentials_path = fifo})
+	defer done(&b, problem)
+	testing.expect(t, b.key == "" && strings.contains(problem, "has no key"), problem)
+	testing.expectf(t, time.tick_since(start) < 5 * time.Second, "took %v", time.tick_since(start))
+}
+
 @(test)
 no_key_anywhere_names_the_three_sources :: proc(t: ^testing.T) {
 	dir := scratch(t)

@@ -602,7 +602,20 @@ find_key :: proc(
 // not read at all.
 @(private = "file")
 read_credentials :: proc(path: string, allocator: runtime.Allocator) -> (key: string, problem: string) {
-	info, serr := os.stat(path, allocator)
+	// One open file for the mode, the size and the contents: a file swapped
+	// between a stat and a read would be checked as one and read as another.
+	// Not blocking, so that a FIFO in its place is seen as no regular file
+	// instead of waiting for a writer.
+	flags := os.File_Flags{.Read}
+	when ODIN_OS != .Windows {
+		flags += {.Non_Blocking}
+	}
+	f, oerr := os.open(path, flags)
+	if oerr != nil {
+		return
+	}
+	defer os.close(f)
+	info, serr := os.fstat(f, allocator)
 	if serr != nil {
 		return
 	}
@@ -627,7 +640,7 @@ read_credentials :: proc(path: string, allocator: runtime.Allocator) -> (key: st
 		// variable.
 		_ = mode
 	}
-	data, rerr := os.read_entire_file(path, allocator)
+	data, rerr := os.read_entire_file(f, allocator)
 	if rerr != nil {
 		return
 	}
