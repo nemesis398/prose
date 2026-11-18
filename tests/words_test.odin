@@ -204,3 +204,47 @@ a_lone_carriage_return_ends_a_line :: proc(t: ^testing.T) {
 	testing.expect(t, has(ws2, "one") && has(ws2, "two") && has(ws2, "three"))
 	testing.expect_value(t, len(ws2), 19 + 3)
 }
+
+// Trailing separators go, but a root stays a root: `C:\` is not `C:`.
+@(test)
+trailing_separators_are_trimmed_but_a_root_is_kept :: proc(t: ^testing.T) {
+	Case :: struct {
+		in_, want: string,
+	}
+	for c in ([]Case {
+			{`C:\`, `C:\`},
+			{`C:\\`, `C:\`},
+			{`C:/`, `C:/`},
+			{`c:\`, `c:\`},
+			{`C:`, `C:`},
+			{`C:\bin\`, `C:\bin`},
+			{`C:\bin`, `C:\bin`},
+			{`/`, `/`},
+			{`//`, `/`},
+			{`\`, `\`},
+			{`/opt/skills/`, `/opt/skills`},
+			{`/opt/skills`, `/opt/skills`},
+			{`\\server\share\`, `\\server\share`},
+			{``, ``},
+		}) {
+		testing.expectf(t, prose.trim_trailing_separators(c.in_) == c.want, "%q: got %q, want %q", c.in_, prose.trim_trailing_separators(c.in_), c.want)
+	}
+}
+
+// The skill directory of an executable in the first directory of a drive is
+// the drive's root, not the bare drive. Windows paths only mean something
+// on Windows.
+@(test)
+the_skill_directory_keeps_the_drive_root :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		d := prose.skill_dir_from_exe_dir(`C:\bin`)
+		defer delete(d)
+		testing.expect_value(t, d, `C:\`)
+		d2 := prose.skill_dir_from_exe_dir(`C:\bin\`)
+		defer delete(d2)
+		testing.expect_value(t, d2, `C:\`)
+		d3 := prose.skill_dir_from_exe_dir(`C:\opt\skills\prose\bin`)
+		defer delete(d3)
+		testing.expect_value(t, d3, `C:\opt\skills\prose`)
+	}
+}
