@@ -1,7 +1,9 @@
 # English
 
 American spelling: `organize`, `behavior`, `color`, `center`, `license` as both
-noun and verb, `analyze`.
+noun and verb, `analyze`. One variant is held throughout a text, and it is
+American because that is the default of the tooling and of most technical
+writing.
 
 ## Dashes
 
