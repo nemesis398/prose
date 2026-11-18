@@ -206,6 +206,55 @@ a_file_that_is_present_but_unusable_is_an_error_naming_it :: proc(t: ^testing.T)
 }
 
 @(test)
+the_server_url_is_checked_where_it_is_used_and_in_any_case :: proc(t: ^testing.T) {
+	// The scheme is case-insensitive, as libcurl reads it.
+	for url in ([?]string{"HTTPS://lt.example.org", "Http://localhost:8081", "hTTps://x"}) {
+		content := strings.concatenate({`{"languagetool": {"backend": "server", "server": "`, url, `"}}`})
+		defer delete(content)
+		s, err, path, dir := load(t, content)
+		defer load_done(&s, &err, path, dir)
+		testing.expectf(t, err.problem == "" && s.server == url, "%q: %q", url, err.problem)
+	}
+	// A URL no backend uses is not checked: a stale value does not break a
+	// file that has moved to another backend, or has none.
+	for content in ([?]string {
+			`{"languagetool": {"backend": "public", "server": "lt.example.org"}}`,
+			`{"languagetool": {"backend": "premium", "server": "ftp://x"}}`,
+			`{"languagetool": {"backend": "none", "server": "x"}}`,
+			`{"languagetool": {"server": "lt.example.org"}}`,
+		}) {
+		s, err, path, dir := load(t, content)
+		defer load_done(&s, &err, path, dir)
+		testing.expectf(t, err.problem == "", "%s: %q", content, err.problem)
+	}
+	// Used by the server backend, a bad scheme is an error.
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server", "server": "ftp://lt.example.org"}}`,
+		`must start with http:// or https://`,
+	)
+	expect_unusable(
+		t,
+		`{"languagetool": {"backend": "server", "server": "httpx://lt.example.org"}}`,
+		`must start with http:// or https://`,
+	)
+}
+
+@(test)
+load_settings_remembers_the_path_it_read :: proc(t: ^testing.T) {
+	s, err, path, dir := load(t, `{}`)
+	defer load_done(&s, &err, path, dir)
+	testing.expect_value(t, s.path, path)
+	// A missing file is no settings, and still knows where it would be.
+	gone, _ := os.join_path({dir, "gone.json"}, context.allocator)
+	defer delete(gone)
+	s2, err2 := prose.load_settings(gone)
+	defer prose.settings_destroy(&s2)
+	testing.expect_value(t, err2.problem, "")
+	testing.expect_value(t, s2.path, gone)
+}
+
+@(test)
 a_file_that_is_too_big_or_not_a_file_is_an_error :: proc(t: ^testing.T) {
 	dir := scratch(t)
 	defer scratch_done(dir)
@@ -390,6 +439,73 @@ a_server_variable_beats_the_files_server :: proc(t: ^testing.T) {
 	b3, problem3 := choose(t, {backend = prose.Backend_Kind.Server}, {}, {})
 	defer done(&b3, problem3)
 	testing.expect(t, problem3 != "" && strings.contains(problem3, "LANGUAGETOOL_SERVER"))
+}
+
+@(test)
+a_server_url_is_checked_wherever_it_comes_from :: proc(t: ^testing.T) {
+	// From the variable: the message names the variable, not the file, and
+	// not the value, which may hold a login.
+	s := prose.Settings {
+		path    = "/x/prose/config.json",
+		backend = prose.Backend_Kind.Server,
+		server  = "https://file.example.org",
+	}
+	b, problem := choose(t, s, {server = "user:secret@lt.example.org"}, {})
+	defer done(&b, problem)
+	testing.expect(t, b.kind == .None && b.url == "")
+	testing.expect(t, strings.contains(problem, "LANGUAGETOOL_SERVER"), problem)
+	testing.expect(t, strings.contains(problem, "http:// or https://"), problem)
+	testing.expect(t, !strings.contains(problem, "secret"), problem)
+	testing.expect(t, !strings.contains(problem, "/x/prose/config.json"), problem)
+	// A good variable beats a bad file value: only the chosen URL is checked.
+	bad_file := s
+	bad_file.server = "lt.example.org"
+	b2, problem2 := choose(t, bad_file, {server = "https://env.example.org"}, {})
+	defer done(&b2, problem2)
+	testing.expect_value(t, problem2, "")
+	testing.expect_value(t, b2.url, "https://env.example.org")
+	// From the file: the message names the file by its whole path.
+	b3, problem3 := choose(t, bad_file, {}, {})
+	defer done(&b3, problem3)
+	testing.expect(t, strings.contains(problem3, "\"languagetool.server\""), problem3)
+	testing.expect(t, strings.contains(problem3, "/x/prose/config.json"), problem3)
+	testing.expect(t, b3.kind == .None && b3.url == "")
+	// The scheme is not case-sensitive here either.
+	b4, problem4 := choose(t, {}, {server = "HTTPS://lt.example.org"}, {})
+	defer done(&b4, problem4)
+	testing.expect_value(t, problem4, "")
+	testing.expect_value(t, b4.url, "HTTPS://lt.example.org")
+	// The variable alone chooses the server backend, and is checked too.
+	b5, problem5 := choose(t, {}, {server = "lt.example.org"}, {})
+	defer done(&b5, problem5)
+	testing.expect(t, strings.contains(problem5, "LANGUAGETOOL_SERVER"), problem5)
+}
+
+@(test)
+the_problems_of_the_backend_choice_name_the_settings_file_by_its_path :: proc(t: ^testing.T) {
+	PATH :: "/x/prose/config.json"
+	// No URL.
+	b, problem := choose(t, {path = PATH, backend = prose.Backend_Kind.Server}, {}, {})
+	defer done(&b, problem)
+	testing.expect(t, strings.contains(problem, PATH), problem)
+	// No account.
+	b2, problem2 := choose(t, {path = PATH, backend = prose.Backend_Kind.Premium}, {api_key = "k"}, {})
+	defer done(&b2, problem2)
+	testing.expect(t, strings.contains(problem2, PATH), problem2)
+	// No key and no item.
+	b3, problem3 := choose(t, {path = PATH, backend = prose.Backend_Kind.Premium, username = "u"}, {}, {})
+	defer done(&b3, problem3)
+	testing.expect(t, strings.contains(problem3, PATH), problem3)
+	// Settings built by hand have no path and say "config.json".
+	b4, problem4 := choose(t, {backend = prose.Backend_Kind.Server}, {}, {})
+	defer done(&b4, problem4)
+	testing.expect(t, strings.contains(problem4, "in config.json"), problem4)
+	// The same through a loaded file.
+	s, err, path, dir := load(t, `{"languagetool": {"backend": "premium", "username": "u"}}`)
+	defer load_done(&s, &err, path, dir)
+	b5, problem5 := choose(t, s, {}, {})
+	defer done(&b5, problem5)
+	testing.expect(t, strings.contains(problem5, path), problem5)
 }
 
 @(test)
@@ -618,7 +734,7 @@ no_key_anywhere_names_the_three_sources :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(problem2, "LANGUAGETOOL_API_KEY"), problem2)
 	want2 := strings.concatenate(
 		{
-			`LanguageTool Premium has no key: set LANGUAGETOOL_API_KEY, or use an rbw item named in "languagetool.keyItem", or put the key alone in `,
+			`LanguageTool Premium has no key: set LANGUAGETOOL_API_KEY, or use an rbw item named in "languagetool.keyItem" in config.json, or put the key alone in `,
 			cred,
 			" (mode 600)",
 		},

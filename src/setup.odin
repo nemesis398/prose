@@ -67,7 +67,7 @@ apply_values :: proc(path, values_json: string, allocator := context.allocator) 
 	}
 	defer json.destroy_value(root, allocator)
 	values := &root.(json.Object)
-	return apply_object(path, values, allocator)
+	return apply_object(path, values, "the values on standard input", allocator)
 }
 
 // parse_object parses `text` as one JSON object, and nothing after it. The
@@ -103,9 +103,10 @@ is_key_name :: proc(name: string) -> bool {
 
 // apply_object is `apply_values` for values already parsed. It takes the
 // entries out of `values` and frees what it does not keep; the map itself
-// stays the caller's, empty.
+// stays the caller's, empty. `from` names where the values came from in a
+// problem with one of them ("the values on standard input").
 @(private = "file")
-apply_object :: proc(path: string, values: ^json.Object, allocator: runtime.Allocator) -> Settings_Error {
+apply_object :: proc(path: string, values: ^json.Object, from: string, allocator: runtime.Allocator) -> Settings_Error {
 	for key, value in values {
 		if is_key_name(key) {
 			return setup_fail(path, allocator, SETUP_NO_KEY_IN_FILE + " (refused %q)", key)
@@ -117,10 +118,18 @@ apply_object :: proc(path: string, values: ^json.Object, allocator: runtime.Allo
 						return setup_fail(path, allocator, SETUP_NO_KEY_IN_FILE + " (refused %q in \"languagetool\")", k)
 					}
 				}
-			} else if _, is_null := value.(json.Null); !is_null {
-				return setup_fail(path, allocator, "%s: \"languagetool\" must be an object", path)
 			}
 		}
+	}
+
+	// The values alone must be usable, whatever the stored file holds. A
+	// fault found here is in the values, so it names where they came from and
+	// not the settings file, which has done nothing wrong.
+	checked, verr := read_settings(values^, from, true, allocator)
+	settings_destroy(&checked, allocator)
+	if verr.problem != "" {
+		defer settings_error_destroy(&verr, allocator)
+		return setup_fail(path, allocator, "%s", verr.problem)
 	}
 
 	if path == "" {
@@ -634,7 +643,7 @@ run_setup_tty :: proc(stdin: io.Reader, stdout, stderr: io.Writer, path: string,
 				delete(answer, allocator)
 				answer = strings.clone(now, allocator)
 			}
-			if strings.has_prefix(answer, "http://") || strings.has_prefix(answer, "https://") {
+			if has_http_scheme(answer) {
 				set(&lt, "server", json.String(answer), allocator)
 				break
 			}
@@ -707,7 +716,7 @@ run_setup_tty :: proc(stdin: io.Reader, stdout, stderr: io.Writer, path: string,
 	}
 	set(&values, "languagetool", lt, allocator)
 
-	err := apply_object(path, &values, allocator)
+	err := apply_object(path, &values, "the answers", allocator)
 	defer settings_error_destroy(&err, allocator)
 	if err.problem != "" {
 		fmt.wprintf(stderr, "prose: %s\nprose: the settings file is unchanged\n", err.problem)

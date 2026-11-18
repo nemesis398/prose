@@ -327,7 +327,9 @@ a_typo_in_the_backend_exits_2_and_leaves_the_file_alone :: proc(t: ^testing.T) {
 	testing.expect_value(t, c.code, 2)
 	testing.expect_value(t, c.out, "")
 	expect_contains(t, c.err, "languagetool.backend")
-	expect_contains(t, c.err, path)
+	// The fault is in the values, so the message names them and not the file.
+	expect_contains(t, c.err, "the values on standard input")
+	expect_lacks(t, c.err, path)
 	expect_contains(t, c.err, "unchanged")
 	expect_file(t, path, before)
 	listing := names(dir)
@@ -396,6 +398,51 @@ wrong_types_in_the_values_are_refused :: proc(t: ^testing.T) {
 		expect_file(t, path, `{"languageRule": "keep"}`)
 		cli_done(&c)
 	}
+}
+
+// A wrong type in the values is the values' fault: the message names where
+// they came from. The file is named only for what is wrong in the file.
+@(test)
+a_wrong_type_names_its_source_not_the_settings_file :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	put(t, path, `{"languageRule": "keep"}`)
+	Case :: struct {
+		values, want: string,
+	}
+	for c in ([]Case {
+			{`{"languageRule": 5}`, `"languageRule" must be a string`},
+			{`{"ignoreWords": "x"}`, `"ignoreWords" must be a list of strings`},
+			{`{"languagetool": "public"}`, `"languagetool" must be an object`},
+			{`{"languagetool": {"server": 3}}`, `"languagetool.server" must be a string`},
+			{`{"languagetool": {"username": []}}`, `"languagetool.username" must be a string`},
+			{`{"languagetool": {"keyItem": {}}}`, `"languagetool.keyItem" must be a string`},
+			{`{"languagetool": {"backend": 3}}`, `"languagetool.backend" must be one of`},
+			{`{"languagetool": {"server": "lt.example.org"}}`, `"languagetool.server" must start with http:// or https://`},
+		}) {
+		r := values(dir, c.values)
+		defer cli_done(&r)
+		testing.expectf(t, r.code == 2, "%s: exit %d", c.values, r.code)
+		want := strings.concatenate({"prose: the values on standard input: ", c.want})
+		defer delete(want)
+		expect_contains(t, r.err, want)
+		expect_lacks(t, r.err, path)
+		expect_file(t, path, `{"languageRule": "keep"}`)
+	}
+	// What is wrong in the merged file is the file's, and it is named.
+	put(t, path, `{"languagetool": {"backend": "server"}}`)
+	r := values(dir, `{"languageRule": "x"}`)
+	defer cli_done(&r)
+	testing.expect_value(t, r.code, 2)
+	expect_contains(t, r.err, path)
+	// A null deletes and is not a wrong type.
+	put(t, path, `{"languageRule": "r", "languagetool": {"server": "http://x", "username": "u"}}`)
+	r2 := values(dir, `{"languageRule": null, "languagetool": {"server": null, "username": null}}`)
+	defer cli_done(&r2)
+	testing.expect_value(t, r2.code, 0)
+	expect_file(t, path, "{}\n")
 }
 
 @(test)
@@ -737,6 +784,23 @@ setup_asks_for_a_server_and_a_rule :: proc(t: ^testing.T) {
 		t,
 		path,
 		"{\n  \"languageRule\": \"Sie in Mails\",\n  \"languagetool\": {\n    \"backend\": \"server\",\n    \"server\": \"https://lt.example.org\"\n  }\n}\n",
+	)
+}
+
+@(test)
+setup_takes_a_url_scheme_in_any_case :: proc(t: ^testing.T) {
+	dir := scratch(t)
+	defer scratch_done(dir)
+	path := join(dir, "config.json")
+	defer delete(path)
+	c := ask(dir, "server\nHTTPS://lt.example.org\n\n")
+	defer tty_done(&c)
+	testing.expect_value(t, c.code, 0)
+	expect_lacks(t, c.out, "has to start with")
+	expect_file(
+		t,
+		path,
+		"{\n  \"languagetool\": {\n    \"backend\": \"server\",\n    \"server\": \"HTTPS://lt.example.org\"\n  }\n}\n",
 	)
 }
 

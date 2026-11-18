@@ -22,12 +22,15 @@ Backend_Kind :: enum {
 // reads as the zero `Settings`. Everything in it is allocated with the
 // allocator given to `load_settings` and freed by `settings_destroy`.
 //
-// `backend` is nil when the file does not name one, which is not the same as
+// `path` is the file `load_settings` was given, "" when the settings were
+// built by hand; the messages of `choose_backend` name it. `backend` is nil
+// when the file does not name one, which is not the same as
 // `.None`: without a choice in the file the exported variables count.
 // `ignore_words` are trimmed, with blank entries dropped. `unknown_keys`
 // lists the keys the checker does not know, sorted, nested ones as
 // "languagetool.NAME"; `--selftest` notes them, nothing else does.
 Settings :: struct {
+	path:             string,
 	language_rule:    string,
 	ignore_words:     []string,
 	backend:          Maybe(Backend_Kind),
@@ -105,7 +108,26 @@ MAX_CREDENTIALS_BYTES :: 64 << 10
 @(private = "file")
 BACKEND_NAMES :: "none, public, premium, server"
 
+// has_http_scheme tells whether `url` starts with http:// or https://, in
+// any case, as libcurl reads the scheme.
+has_http_scheme :: proc(url: string) -> bool {
+	for scheme in ([?]string{"http://", "https://"}) {
+		if len(url) >= len(scheme) && strings.equal_fold(url[:len(scheme)], scheme) {
+			return true
+		}
+	}
+	return false
+}
+
+// settings_name is how a message names the settings file: the whole path
+// when the settings came from a file, else "config.json".
+@(private = "file")
+settings_name :: proc(s: Settings) -> string {
+	return s.path if s.path != "" else "config.json"
+}
+
 settings_destroy :: proc(s: ^Settings, allocator := context.allocator) {
+	delete(s.path, allocator)
 	delete(s.language_rule, allocator)
 	for w in s.ignore_words {
 		delete(w, allocator)
@@ -207,8 +229,9 @@ fail :: proc(path: string, allocator: runtime.Allocator, format: string, args: .
 // but cannot be used is an error, and `Settings` is then empty: invalid
 // JSON, a top level that is not an object, a key of the wrong type, an
 // unknown `backend`, a `server` backend without a URL (or with one that does
-// not start with http:// or https://), a file bigger than a MiB, or
-// something that is not a regular file. Reading it as "no settings" would
+// not start with http:// or https://, in any case), a file bigger than a MiB,
+// or something that is not a regular file. A URL is checked only when the
+// file's backend is `server`; for any other backend it is not used. Reading it as "no settings" would
 // turn Premium off after one typo.
 //
 // A key the checker does not know is no error; it lands in `unknown_keys`.
@@ -226,6 +249,8 @@ load_settings :: proc(
 		// Not a deferred cleanup: Odin copies the named results before it
 		// runs a defer, so a defer cannot empty them.
 		settings_destroy(&s, allocator)
+	} else {
+		s.path = strings.clone(path, allocator)
 	}
 	return
 }
@@ -287,7 +312,25 @@ parse_settings :: proc(
 		err = fail(path, allocator, "must be a JSON object")
 		return
 	}
+	return read_settings(obj, path, false, allocator)
+}
 
+// read_settings reads the settings from the parsed object `obj`. `path`
+// names where the object came from in a problem: the file's path, or for
+// `values_mode` (the values `--setup` is given) the words for their source.
+// In `values_mode` a `null` is a key to delete and is skipped, a `server` is
+// checked for its scheme whatever the backend, and a server backend without
+// a URL is not a problem yet, as the stored file may hold it.
+@(private)
+read_settings :: proc(
+	obj: json.Object,
+	path: string,
+	values_mode: bool,
+	allocator: runtime.Allocator,
+) -> (
+	s: Settings,
+	err: Settings_Error,
+) {
 	unknown: [dynamic]string
 	unknown.allocator = allocator
 	defer if err.problem != "" {
@@ -300,6 +343,9 @@ parse_settings :: proc(
 	// the map's order.
 	for key in sorted_keys(obj) {
 		value := obj[key]
+		if _, is_null := value.(json.Null); is_null && values_mode {
+			continue
+		}
 		switch key {
 		case "languageRule":
 			str, ok := value.(json.String)
@@ -321,7 +367,7 @@ parse_settings :: proc(
 				err = fail(path, allocator, `"languagetool" must be an object`)
 				return
 			}
-			if !read_languagetool(&s, lt, &unknown, path, &err, allocator) {
+			if !read_languagetool(&s, lt, &unknown, path, values_mode, &err, allocator) {
 				return
 			}
 		case:
@@ -329,9 +375,13 @@ parse_settings :: proc(
 		}
 	}
 
-	if kind, ok := s.backend.?; ok && kind == .Server {
+	if kind, ok := s.backend.?; ok && kind == .Server && !values_mode {
 		if s.server == "" {
 			err = fail(path, allocator, `"languagetool.server" is needed when "languagetool.backend" is "server"`)
+			return
+		}
+		if !has_http_scheme(s.server) {
+			err = fail(path, allocator, `"languagetool.server" must start with http:// or https://`)
 			return
 		}
 	}
@@ -387,11 +437,15 @@ read_languagetool :: proc(
 	lt: json.Object,
 	unknown: ^[dynamic]string,
 	path: string,
+	values_mode: bool,
 	err: ^Settings_Error,
 	allocator: runtime.Allocator,
 ) -> bool {
 	for key in sorted_keys(lt) {
 		value := lt[key]
+		if _, is_null := value.(json.Null); is_null && values_mode {
+			continue
+		}
 		switch key {
 		case "backend":
 			str, ok := value.(json.String)
@@ -416,7 +470,7 @@ read_languagetool :: proc(
 				err^ = fail(path, allocator, `"languagetool.server" must be a string`)
 				return false
 			}
-			if str != "" && !(strings.has_prefix(string(str), "http://") || strings.has_prefix(string(str), "https://")) {
+			if values_mode && str != "" && !has_http_scheme(string(str)) {
 				err^ = fail(path, allocator, `"languagetool.server" must start with http:// or https://`)
 				return false
 			}
@@ -485,10 +539,21 @@ choose_backend :: proc(
 	case .Server:
 		url := env.server if env.server != "" else s.server
 		if url == "" {
-			problem = strings.clone(
-				"the server backend needs a URL: set " + ENV_SERVER + " or \"languagetool.server\" in config.json",
-				allocator,
+			problem = fmt.aprintf(
+				"the server backend needs a URL: set " + ENV_SERVER + " or \"languagetool.server\" in %s",
+				settings_name(s),
+				allocator = allocator,
 			)
+			return
+		}
+		if !has_http_scheme(url) {
+			// Say where the bad value is, so that it is not looked for in the
+			// wrong place. The value itself stays out: a URL may hold a login.
+			source := ENV_SERVER + " (environment variable)"
+			if env.server == "" {
+				source = fmt.tprintf("\"languagetool.server\" in %s", settings_name(s))
+			}
+			problem = fmt.aprintf("%s must start with http:// or https://", source, allocator = allocator)
 			return
 		}
 		b = Backend {
@@ -501,7 +566,7 @@ choose_backend :: proc(
 		key, key_from, key_problem := find_key(s, env, key_lookup, allocator)
 		defer delete(key_problem, allocator)
 		if username == "" || key_problem != "" {
-			problem = premium_problem(username == "", key_problem, allocator)
+			problem = premium_problem(s, username == "", key_problem, allocator)
 			delete(key, allocator)
 			return
 		}
@@ -533,11 +598,14 @@ backend_kind :: proc(s: Settings, env: Env) -> (kind: Backend_Kind, from: string
 
 // premium_problem words what keeps Premium from running.
 @(private = "file")
-premium_problem :: proc(no_username: bool, key_problem: string, allocator: runtime.Allocator) -> string {
+premium_problem :: proc(s: Settings, no_username: bool, key_problem: string, allocator: runtime.Allocator) -> string {
 	parts: [2]string
 	n := 0
 	if no_username {
-		parts[n] = "LanguageTool Premium needs the account: set " + ENV_USERNAME + " or \"languagetool.username\" in config.json"
+		parts[n] = fmt.tprintf(
+			"LanguageTool Premium needs the account: set " + ENV_USERNAME + " or \"languagetool.username\" in %s",
+			settings_name(s),
+		)
 		n += 1
 	}
 	if key_problem != "" {
@@ -579,7 +647,7 @@ find_key :: proc(
 		}
 	}
 
-	item := "an rbw item named in \"languagetool.keyItem\""
+	item := fmt.tprintf("an rbw item named in \"languagetool.keyItem\" in %s", settings_name(s))
 	if s.key_item != "" {
 		item = fmt.tprintf("the rbw item \"%s\" (rbw installed and unlocked)", s.key_item)
 	}
