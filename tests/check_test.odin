@@ -64,7 +64,9 @@ run_hunspell_does_nothing_on_windows :: proc(t: ^testing.T) {
 // cannot start there, so it gives no findings either way. This one starts a
 // `.cmd` stub that writes a marker file when it runs, so a marker proves that
 // hunspell was started. It runs on Windows only and could not be run when it
-// was written; the cross-compile checks that it builds.
+// was written; the cross-compile checks that it builds. It first runs the
+// stub on its own and expects the marker, so that it cannot pass merely
+// because the stub never starts.
 @(test)
 windows_never_starts_hunspell :: proc(t: ^testing.T) {
 	MARKER :: #directory + "stub/hunspell-marker.started"
@@ -72,6 +74,14 @@ windows_never_starts_hunspell :: proc(t: ^testing.T) {
 	defer os.remove(MARKER)
 	when ODIN_OS == .Windows {
 		CMD :: #directory + "stub/hunspell-marker.cmd"
+
+		// The positive control: run the stub as `command_output` would, and the
+		// marker must appear. Without it, a stub that never starts at all (a
+		// path or a shell that cannot run it) would pass every check below.
+		_, started := prose.command_output({CMD}, 20 * time.Second, false)
+		testing.expect(t, started, "the stub did not run")
+		testing.expect(t, os.exists(MARKER), "the stub ran but left no marker: the test cannot see a start")
+		testing.expect(t, os.remove(MARKER) == nil)
 
 		r, err := prose.check_text(TEXT, {lang = "en", use_lt = true, hunspell_command = CMD})
 		defer prose.file_result_destroy(&r)
