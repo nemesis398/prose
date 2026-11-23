@@ -1,7 +1,8 @@
 # A stand-in until the shared workflow of ravnix's foundation repository
 # replaces it. On a tag vX.Y.Z equal to plugin.json's version: check.yml,
-# which tests and builds the four binaries on their own platforms exactly
-# as on every push, then a release with the four binaries and SHA256SUMS,
+# which tests and builds the five binaries (the Intel Mac one is cross-compiled
+# and tested on an Intel runner) exactly as on every push, then a release
+# with the five binaries and SHA256SUMS,
 # the files that skills/prose/install and install.ps1 fetch. The notes are
 # the version's section of CHANGELOG.md, then GitHub's generated notes.
 name: release
@@ -33,7 +34,7 @@ jobs:
           echo "version=$version" >>"$GITHUB_OUTPUT"
 
   # The same tests and builds as every push, Windows PowerShell 5.1
-  # included; its artifacts are the four binaries.
+  # included; its artifacts are the five binaries.
   check:
     needs: version
     uses: ./.github/workflows/check.yml
@@ -71,7 +72,8 @@ jobs:
           # Bare names, one "<sha256>  <name>" line each; a missing binary
           # fails here.
           sha256sum prose-check-linux-x86_64 prose-check-linux-arm64 \
-            prose-check-macos-arm64 prose-check-windows-x86_64.exe >SHA256SUMS
+            prose-check-macos-arm64 prose-check-macos-x86_64 \
+            prose-check-windows-x86_64.exe >SHA256SUMS
           cat SHA256SUMS
       - name: The version's section of CHANGELOG.md
         env:
@@ -97,4 +99,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "prose $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes \
             prose-check-linux-x86_64 prose-check-linux-arm64 prose-check-macos-arm64 \
-            prose-check-windows-x86_64.exe SHA256SUMS
+            prose-check-macos-x86_64 prose-check-windows-x86_64.exe SHA256SUMS

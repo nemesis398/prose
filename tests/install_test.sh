@@ -31,6 +31,7 @@ check() { # description, then a command
 	if "$@"; then ok; else bad "$desc"; fi
 }
 contains() { case $1 in *"$2"*) return 0 ;; *) return 1 ;; esac }
+not_contains() { ! contains "$@"; }
 lacks() { case $1 in *"$2"*) return 1 ;; *) return 0 ;; esac }
 lines() { # number of lines in the text, with no trailing newline counted
 	printf '%s\n' "$1" | awk 'END { print NR }'
@@ -59,7 +60,7 @@ fi
 
 release="$work/release"
 mkdir -p "$release/v0.1.0"
-for p in linux-x86_64 linux-arm64 macos-arm64 windows-x86_64.exe; do
+for p in linux-x86_64 linux-arm64 macos-arm64 macos-x86_64 windows-x86_64.exe; do
 	printf '#!/bin/sh\n# asset %s\necho "prose-check 0.1.0"\n' "$p" >"$release/v0.1.0/prose-check-$p"
 done
 (cd "$release/v0.1.0" && "$real_sha" prose-check-* >SHA256SUMS)
@@ -285,7 +286,7 @@ suite_run() {
 	unset PROSE_VERSION
 
 	# 1. installs for each supported platform, and the binary runs
-	for combo in "Linux x86_64 linux-x86_64" "Linux aarch64 linux-arm64" "Darwin arm64 macos-arm64"; do
+	for combo in "Linux x86_64 linux-x86_64" "Linux aarch64 linux-arm64" "Darwin arm64 macos-arm64" "Darwin x86_64 macos-x86_64"; do
 		# shellcheck disable=SC2086 # the words are the point
 		set -- $combo
 		setup_root "$root"
@@ -302,7 +303,7 @@ suite_run() {
 	done
 
 	# 2. unsupported platforms are refused in one line, with no file left
-	for combo in "SunOS sun4v" "Darwin x86_64" "Linux riscv64" "Linux i686"; do
+	for combo in "SunOS sun4v" "Linux riscv64" "Linux i686"; do
 		# shellcheck disable=SC2086 # the words are the point
 		set -- $combo
 		setup_root "$root"
@@ -321,12 +322,14 @@ suite_run() {
 		cmp -s "$release/v0.1.0/prose-check-macos-arm64" "$bin/prose-check"
 	setup_root "$root"
 	run "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=0" "$root"
-	check "Darwin x86_64, sysctl says native: still refused (rc $rc)" [ "$rc" -ne 0 ]
-	check "Darwin x86_64, sysctl says native: names the platform (got: $out)" contains "$out" "unsupported platform: Darwin x86_64"
+	check "Darwin x86_64, sysctl says native: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+	check "Darwin x86_64, sysctl says native: installs the macos-x86_64 asset" \
+		cmp -s "$release/v0.1.0/prose-check-macos-x86_64" "$bin/prose-check"
 	setup_root "$root"
 	invoke "$bare" "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
-	check "Darwin x86_64 with no sysctl: refused (rc $rc)" [ "$rc" -ne 0 ]
-	check "Darwin x86_64 with no sysctl: names the platform (got: $out)" contains "$out" "unsupported platform: Darwin x86_64"
+	# The bare PATH has no sha256 tool either, so the install stops there:
+	# past the platform check, which is the point.
+	check "Darwin x86_64 with no sysctl: is an Intel Mac, not unsupported (got: $out)" not_contains "$out" "unsupported platform"
 	setup_root "$root"
 	run "FAKE_OS=Linux" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
 	check "Linux x86_64 ignores the Rosetta probe: linux-x86_64 asset" \

@@ -1,9 +1,20 @@
 # The version is the one in the plugin manifest, so a tag and a build agree.
 version := $(shell sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' .claude-plugin/plugin.json)
 
+# TARGET cross-compiles, for example `make build TARGET=darwin_amd64`. Empty
+# builds for the host.
+TARGET ?=
+
 ODIN_FLAGS := -vet -o:speed
+ifneq ($(TARGET),)
+ODIN_FLAGS += -target:$(TARGET)
+endif
+ifneq (,$(findstring amd64,$(TARGET)))
+ODIN_FLAGS += -microarch:x86-64-v2
+else ifeq ($(TARGET),)
 ifeq ($(shell uname -m),x86_64)
 ODIN_FLAGS += -microarch:x86-64-v2
+endif
 endif
 
 TEST_DEFINES := -define:ODIN_TEST_RANDOM_SEED=1 \

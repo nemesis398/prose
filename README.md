@@ -79,7 +79,8 @@ When `main` is ahead of the latest release, the installer finds no release
 for its version. Check out the latest release tag first, or build the checker
 from source (see below).
 
-Binaries exist for Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64.
+Binaries exist for Linux x86_64, Linux arm64, macOS arm64, macOS x86_64 and
+Windows x86_64.
 The Linux ones need glibc 2.28 or later (built on AlmaLinux 8; Debian 10,
 Ubuntu 18.10 and RHEL 8 or later) and the system's `libcurl.so.4`.
 The installers need `curl` and `sha256sum` or `shasum` (PowerShell brings its

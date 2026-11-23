@@ -4,6 +4,14 @@ All notable changes to prose are listed here. The format follows [Keep a
 Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-23
+
+### Added
+
+- A checker binary for Intel Macs, `prose-check-macos-x86_64`. The macOS arm64
+  job cross-compiles it, and a job on an Intel runner tests it. The installer
+  picks it on a Mac that reports `x86_64` and is not running under Rosetta.
+
 ## [0.1.1] - 2026-11-18
 
 A patch release. A setup or a settings file that worked on 0.1.0 keeps

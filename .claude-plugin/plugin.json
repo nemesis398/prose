@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "prose",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "One writing style for German and English, with the reasons for each rule and a checker that proves a text follows it.",
   "author": {
     "name": "nemesis398",

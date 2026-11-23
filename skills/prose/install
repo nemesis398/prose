@@ -114,11 +114,12 @@ case "$os $arch" in
 "Darwin arm64") asset=prose-check-macos-arm64 ;;
 "Darwin x86_64")
 	# A shell that runs under Rosetta on Apple silicon reports x86_64, and the
-	# machine is arm64. sysctl prints 1 for a translated process.
+	# machine is arm64. sysctl prints 1 for a translated process; anything
+	# else is an Intel Mac.
 	if command -v sysctl >/dev/null 2>&1 && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
 		asset=prose-check-macos-arm64
 	else
-		fail "unsupported platform: $os $arch"
+		asset=prose-check-macos-x86_64
 	fi
 	;;
 *) fail "unsupported platform: $os $arch" ;;
