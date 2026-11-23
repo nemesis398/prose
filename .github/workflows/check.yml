@@ -266,17 +266,22 @@ jobs:
         with:
           name: prose-tests-macos-x86_64
           path: dist
-      - name: Odin tests, on the Intel build
-        run: |
-          chmod +x dist/prose-tests-macos-x86_64
-          ./dist/prose-tests-macos-x86_64
+      # First, so that a failing step after it does not leave doccheck
+      # without a binary.
       - name: Put the binary where the Makefile expects it
         run: |
           chmod +x "dist/$ASSET"
           mkdir -p skills/prose/bin
           cp "dist/$ASSET" skills/prose/bin/prose-check
           file skills/prose/bin/prose-check
+      # This runner has no Odin: the test that runs the checker in an
+      # environment of its own takes the Intel binary instead of building one.
+      - name: Odin tests, on the Intel build
+        run: |
+          chmod +x dist/prose-tests-macos-x86_64
+          PROSE_CHECK_BIN="$GITHUB_WORKSPACE/skills/prose/bin/prose-check" ./dist/prose-tests-macos-x86_64
       - name: The binary runs, names the version, and says nothing else
+        if: ${{ !cancelled() }}
         run: |
           version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' .claude-plugin/plugin.json)
           got=$("./dist/$ASSET" --version 2>"$RUNNER_TEMP/stderr")

@@ -880,8 +880,10 @@ an_error_a_retry_cannot_cure_is_not_retried :: proc(t: ^testing.T) {
 // variable pointing at a dead port, a run against a LanguageTool on loopback
 // still reaches it, because `run_env_from_os` hands the loopback list on and
 // `lt_post` gives it to libcurl. In process, the environment is the test
-// runner's and may not be touched, so this builds the checker and runs it with
-// an environment of its own. The premise is checked too: when the user's own
+// runner's and may not be touched, so this runs the checker with an
+// environment of its own. The checker is the one `PROSE_CHECK_BIN` names, where
+// the runner has no Odin (the Intel CI job runs a cross-compiled test runner),
+// else one this test builds. The premise is checked too: when the user's own
 // `NO_PROXY` is set, the bypass yields and the same run dies at the dead proxy.
 @(test)
 a_run_reaches_loopback_past_a_proxy_variable :: proc(t: ^testing.T) {
@@ -899,18 +901,33 @@ a_run_reaches_loopback_past_a_proxy_variable :: proc(t: ^testing.T) {
 			_ = os.remove_all(dir)
 			delete(dir)
 		}
-		exe, _ := os.join_path({dir, "prose-check"}, context.allocator)
+		exe: string
 		defer delete(exe)
-		out_flag := strings.concatenate({"-out:", exe})
-		defer delete(out_flag)
-		build_state, build_out, build_err, berr := os.process_exec(
-			{command = {"odin", "build", #directory + "../src", out_flag, "-o:none"}},
-			context.allocator,
-		)
-		defer delete(build_out)
-		defer delete(build_err)
-		if !testing.expectf(t, berr == nil && build_state.exit_code == 0, "build failed: %v %s", berr, build_err) {
-			return
+		if given, ok := os.lookup_env("PROSE_CHECK_BIN", context.allocator); ok && given != "" {
+			exe = given
+			if !testing.expectf(t, os.exists(exe), "PROSE_CHECK_BIN=%s does not exist", exe) {
+				return
+			}
+		} else {
+			delete(given)
+			exe, _ = os.join_path({dir, "prose-check"}, context.allocator)
+			out_flag := strings.concatenate({"-out:", exe})
+			defer delete(out_flag)
+			build_state, build_out, build_err, berr := os.process_exec(
+				{command = {"odin", "build", #directory + "../src", out_flag, "-o:none"}},
+				context.allocator,
+			)
+			defer delete(build_out)
+			defer delete(build_err)
+			if !testing.expectf(
+				t,
+				berr == nil && build_state.exit_code == 0,
+				"build failed: %v %s (without Odin, set PROSE_CHECK_BIN to a built prose-check)",
+				berr,
+				build_err,
+			) {
+				return
+			}
 		}
 
 		server := fmt.aprintf("LANGUAGETOOL_SERVER=http://127.0.0.1:%d", port)
