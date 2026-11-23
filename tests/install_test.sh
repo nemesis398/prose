@@ -31,7 +31,6 @@ check() { # description, then a command
 	if "$@"; then ok; else bad "$desc"; fi
 }
 contains() { case $1 in *"$2"*) return 0 ;; *) return 1 ;; esac }
-not_contains() { ! contains "$@"; }
 lacks() { case $1 in *"$2"*) return 1 ;; *) return 0 ;; esac }
 lines() { # number of lines in the text, with no trailing newline counted
 	printf '%s\n' "$1" | awk 'END { print NR }'
@@ -329,7 +328,7 @@ suite_run() {
 	invoke "$bare" "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
 	# The bare PATH has no sha256 tool either, so the install stops there:
 	# past the platform check, which is the point.
-	check "Darwin x86_64 with no sysctl: is an Intel Mac, not unsupported (got: $out)" not_contains "$out" "unsupported platform"
+	check "Darwin x86_64 with no sysctl: is an Intel Mac, not unsupported (got: $out)" lacks "$out" "unsupported platform"
 	setup_root "$root"
 	run "FAKE_OS=Linux" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
 	check "Linux x86_64 ignores the Rosetta probe: linux-x86_64 asset" \
