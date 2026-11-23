@@ -325,10 +325,15 @@ suite_run() {
 	check "Darwin x86_64, sysctl says native: installs the macos-x86_64 asset" \
 		cmp -s "$release/v0.1.0/prose-check-macos-x86_64" "$bin/prose-check"
 	setup_root "$root"
-	invoke "$bare" "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
-	# The bare PATH has no sha256 tool either, so the install stops there:
-	# past the platform check, which is the point.
-	check "Darwin x86_64 with no sysctl: is an Intel Mac, not unsupported (got: $out)" lacks "$out" "unsupported platform"
+	nosysctl="$work/nosysctl"
+	rm -rf "$nosysctl"
+	mkdir -p "$nosysctl"
+	for t in "$bare"/*; do ln -s "$(readlink "$t" 2>/dev/null || echo "$t")" "$nosysctl/${t##*/}"; done
+	ln -s "$real_sha" "$nosysctl/sha256sum"
+	invoke "$nosysctl" "FAKE_OS=Darwin" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
+	check "Darwin x86_64 with no sysctl: exit 0 (got $rc: $out)" [ "$rc" -eq 0 ]
+	check "Darwin x86_64 with no sysctl: installs the macos-x86_64 asset" \
+		cmp -s "$release/v0.1.0/prose-check-macos-x86_64" "$bin/prose-check"
 	setup_root "$root"
 	run "FAKE_OS=Linux" "FAKE_ARCH=x86_64" "FAKE_TRANSLATED=1" "$root"
 	check "Linux x86_64 ignores the Rosetta probe: linux-x86_64 asset" \

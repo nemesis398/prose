@@ -3,7 +3,7 @@ version := $(shell sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' .claude-plugin/pl
 
 # TARGET cross-compiles, for example `make build TARGET=darwin_amd64`. Empty
 # builds for the host.
-TARGET ?=
+TARGET :=
 
 ODIN_FLAGS := -vet -o:speed
 ifneq ($(TARGET),)
@@ -22,11 +22,19 @@ TEST_DEFINES := -define:ODIN_TEST_RANDOM_SEED=1 \
 	-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true \
 	-define:ODIN_TEST_FANCY=false
 
-.PHONY: build test test-odin test-install test-install-ps1 lint doccheck
+.PHONY: build build-odin-tests test test-odin test-install test-install-ps1 lint doccheck
 
 build:
 	mkdir -p skills/prose/bin
 	odin build src -out:skills/prose/bin/prose-check $(ODIN_FLAGS) -define:PROSE_VERSION=$(version)
+
+# The Odin test runner as a binary, not run: with TARGET it is cross-compiled,
+# so CI can run it on the machine it was built for.
+TEST_OUT := dist/prose-tests
+
+build-odin-tests:
+	mkdir -p $(dir $(TEST_OUT))
+	odin build tests -out:$(TEST_OUT) -build-mode:test $(ODIN_FLAGS) $(TEST_DEFINES)
 
 # The three suites. CI runs each as a step of its own, so that one failing
 # suite does not hide another's result.

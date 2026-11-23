@@ -147,6 +147,17 @@ jobs:
           cp skills/prose/bin/prose-check "dist/$CROSS_ASSET"
           file "dist/$CROSS_ASSET"
           lipo -archs "dist/$CROSS_ASSET" | grep -qx x86_64
+      # The Odin tests, built for Intel and run on the Intel job, so the
+      # libcurl calls (the languagetool tests, against the fake server) run
+      # on x86_64.
+      - name: Cross-compile the Odin test runner for Intel (macOS)
+        if: ${{ !cancelled() && matrix.cross-target }}
+        env:
+          CROSS_TARGET: ${{ matrix.cross-target }}
+        run: |
+          make build-odin-tests TARGET="$CROSS_TARGET" TEST_OUT=dist/prose-tests-macos-x86_64
+          file dist/prose-tests-macos-x86_64
+          lipo -archs dist/prose-tests-macos-x86_64 | grep -qx x86_64
       - name: No versioned libcurl symbols (Linux)
         if: ${{ !cancelled() && matrix.container }}
         run: |
@@ -223,10 +234,19 @@ jobs:
           path: dist/${{ matrix.cross-asset }}
           if-no-files-found: error
           retention-days: 7
+      - name: Upload the Intel Odin test runner (macOS)
+        if: ${{ matrix.cross-asset }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prose-tests-macos-x86_64
+          path: dist/prose-tests-macos-x86_64
+          if-no-files-found: error
+          retention-days: 7
 
   # The cross-compiled Intel binary, run on an Intel runner. Odin has no
-  # build for it, so nothing is built here: the Odin unit tests run on the
-  # arm64 job, and this job runs the binary and the installer tests.
+  # build for it, so nothing is built here: the arm64 job cross-compiles the
+  # binary and the Odin test runner, and this job runs both and the installer
+  # tests.
   test-intel:
     name: test (prose-check-macos-x86_64)
     needs: test
@@ -242,6 +262,14 @@ jobs:
         with:
           name: prose-check-macos-x86_64
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prose-tests-macos-x86_64
+          path: dist
+      - name: Odin tests, on the Intel build
+        run: |
+          chmod +x dist/prose-tests-macos-x86_64
+          ./dist/prose-tests-macos-x86_64
       - name: Put the binary where the Makefile expects it
         run: |
           chmod +x "dist/$ASSET"

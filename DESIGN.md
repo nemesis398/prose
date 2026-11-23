@@ -139,7 +139,7 @@ is a code path the checker and its tests must carry, and the reasons are what
 make the style worth installing.
 
 **The checker is written in Odin**, as `prose-check`, and released as a binary
-for Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64, so a user needs
+for Linux x86_64, Linux arm64, macOS arm64, macOS x86_64 and Windows x86_64, so a user needs
 no Python, no Nix and no compiler. It keeps the Python checker's interface,
 flags, exit codes, JSON shape and rule names. The port ran against the Python
 checker as its reference: a corpus of documents went through both, offline and
